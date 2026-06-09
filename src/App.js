@@ -208,9 +208,9 @@ function StructuredMedicineResult({ data }) {
         <span style={{ fontSize: 11, color: "#a78bfa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>💊 Medicine Info</span>
       </div>
       {[
-        { label: "Uses / பயன்பாடு", items: data.uses, color: "#60a5fa" },
-        { label: "Side Effects / பக்க விளைவுகள்", items: data.sideEffects, color: "#f59e0b" },
-        { label: "Warnings / எச்சரிக்கை", items: data.warnings, color: "#ef4444" },
+        { label: "Uses / பயன்பாடு", items: data.uses || [], color: "#60a5fa" },
+        { label: "Side Effects / பக்க விளைவுகள்", items: data.sideEffects || data.side_effects || [], color: "#f59e0b" },
+        { label: "Warnings / எச்சரிக்கை", items: data.warnings || [], color: "#ef4444" },
       ].map(({ label, items, color }) => (
         <div key={label} style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11, color, fontWeight: 600, marginBottom: 5, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
