@@ -3,88 +3,88 @@ import { useState, useRef, useEffect, useCallback } from "react";
 // ── Icons (inline SVG components) ─────────────────────────────────────────────
 const SendIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+    <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
   </svg>
 );
 const MicIcon = ({ active }) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+    <path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
   </svg>
 );
 const PlusIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
   </svg>
 );
 const LabIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v11l-5 5h16l-5-5V3"/>
+    <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v11l-5 5h16l-5-5V3" />
   </svg>
 );
 const ScanIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>
+    <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
   </svg>
 );
 const PillIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/>
+    <path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z" /><path d="m8.5 8.5 7 7" />
   </svg>
 );
 const CloseIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
   </svg>
 );
 const HeartIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
   </svg>
 );
 const BotIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/>
-    <path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/>
+    <rect x="3" y="11" width="18" height="10" rx="2" /><circle cx="12" cy="5" r="2" />
+    <path d="M12 7v4" /><line x1="8" y1="16" x2="8" y2="16" /><line x1="16" y1="16" x2="16" y2="16" />
   </svg>
 );
 const UserIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-    <circle cx="12" cy="7" r="4"/>
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
   </svg>
 );
 const UploadIcon = () => (
   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
-    <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+    <polyline points="16 16 12 12 8 16" /><line x1="12" y1="12" x2="12" y2="21" />
+    <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
   </svg>
 );
 const CheckIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12"/>
+    <polyline points="20 6 9 17 4 12" />
   </svg>
 );
 const WarningIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-    <line x1="12" y1="9" x2="12" y2="13" stroke="white" strokeWidth="2"/><line x1="12" y1="17" x2="12.01" y2="17" stroke="white" strokeWidth="2"/>
+    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+    <line x1="12" y1="9" x2="12" y2="13" stroke="white" strokeWidth="2" /><line x1="12" y1="17" x2="12.01" y2="17" stroke="white" strokeWidth="2" />
   </svg>
 );
 const PhoneIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13.1a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.77 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 17z"/>
+    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13.1a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.77 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 17z" />
   </svg>
 );
 const HistoryIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/>
+    <polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.95" />
   </svg>
 );
 const NewChatIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-    <line x1="12" y1="9" x2="12" y2="13"/><line x1="10" y1="11" x2="14" y2="11"/>
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    <line x1="12" y1="9" x2="12" y2="13" /><line x1="10" y1="11" x2="14" y2="11" />
   </svg>
 );
 
@@ -129,18 +129,30 @@ const MOCK_RESPONSES = {
     answer: q.toLowerCase().includes("sugar") || q.toLowerCase().includes("diabetes")
       ? "Diabetes control-க்கு: Daily exercise, less rice, more vegetables. Metformin எடுக்கிறீங்களா? Doctor கிட்ட HbA1c test பண்ணுங்க. Normal range: below 7%."
       : q.toLowerCase().includes("bp") || q.toLowerCase().includes("pressure")
-      ? "Blood pressure-கு: Less salt, walk 30 minutes daily. Stress குறைக்கணும். ஒரு week-கு ஒரு முறை BP check பண்ணுங்க. Doctor advice follow பண்ணுங்க."
-      : "உங்கள் கேள்விக்கு நன்றி. இந்த symptom-க்கு doctor consultation recommend பண்றேன். More info தேவைன்னா ask பண்ணுங்க!",
+        ? "Blood pressure-கு: Less salt, walk 30 minutes daily. Stress குறைக்கணும். ஒரு week-கு ஒரு முறை BP check பண்ணுங்க. Doctor advice follow பண்ணுங்க."
+        : "உங்கள் கேள்விக்கு நன்றி. இந்த symptom-க்கு doctor consultation recommend பண்றேன். More info தேவைன்னா ask பண்ணுங்க!",
     structured: null
   })
 };
 
+const API_URL = "https://anbu-health-ai.kindrock-2ca528ff.centralindia.azurecontainerapps.io";
+
 async function callAnbuAPI(message, uploadedFile, mode) {
-  await new Promise(r => setTimeout(r, 1200 + Math.random() * 800));
-  if (mode === "lab") return MOCK_RESPONSES.lab(uploadedFile?.name || "report.pdf");
-  if (mode === "scan") return MOCK_RESPONSES.scan(uploadedFile?.name || "scan.jpg");
-  if (mode === "medicine") return MOCK_RESPONSES.medicine(uploadedFile?.name || "medicine.jpg");
-  return MOCK_RESPONSES.general(message);
+  const formData = new FormData();
+  formData.append("question", message);
+  formData.append("mode", mode || "general");
+  if (uploadedFile) formData.append("image", uploadedFile);
+
+  const response = await fetch(`${API_URL}/api/analyze`, {
+    method: "POST",
+    body: formData,
+  });
+  const data = await response.json();
+  return {
+    mode: data.mode,
+    answer: data.final_answer,
+    structured: data.buddhi?.structured_response,
+  };
 }
 
 // ── Prompt counter (replace with Supabase) ─────────────────────────────────────
@@ -156,7 +168,7 @@ function getPromptData() {
 function incrementPrompt() {
   const data = getPromptData();
   const updated = { ...data, count: data.count + 1, date: new Date().toDateString() };
-  try { localStorage.setItem("anbu_prompts", JSON.stringify(updated)); } catch {}
+  try { localStorage.setItem("anbu_prompts", JSON.stringify(updated)); } catch { }
   return updated.count;
 }
 
@@ -167,7 +179,7 @@ function StructuredLabResult({ data }) {
   return (
     <div style={{ marginTop: 12 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-        <span style={{ width: 8, height: 8, borderRadius: "50%", background: urgencyColor, display: "block" }}/>
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: urgencyColor, display: "block" }} />
         <span style={{ fontSize: 11, color: urgencyColor, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>
           {data.urgency === "low" ? "Normal" : data.urgency === "medium" ? "Attention" : "Urgent"} • Lab Report
         </span>
@@ -176,7 +188,7 @@ function StructuredLabResult({ data }) {
         {data.findings.map((f, i) => (
           <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "5px 0", borderBottom: i < data.findings.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
             <span style={{ color: f.includes("Low") || f.includes("High") ? "#f59e0b" : "#10b981", marginTop: 1, flexShrink: 0 }}>
-              {f.includes("Low") || f.includes("High") ? <WarningIcon/> : <CheckIcon/>}
+              {f.includes("Low") || f.includes("High") ? <WarningIcon /> : <CheckIcon />}
             </span>
             <span style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.5 }}>{f}</span>
           </div>
@@ -249,7 +261,7 @@ function MessageBubble({ msg, isLast }) {
           : "linear-gradient(135deg, #059669, #10b981)",
         boxShadow: isUser ? "0 2px 8px rgba(99,102,241,0.4)" : "0 2px 8px rgba(16,185,129,0.35)"
       }}>
-        {isUser ? <UserIcon/> : <BotIcon/>}
+        {isUser ? <UserIcon /> : <BotIcon />}
       </div>
 
       {/* Bubble */}
@@ -283,8 +295,8 @@ function MessageBubble({ msg, isLast }) {
           </p>
 
           {/* Structured results */}
-          {msg.structured && msg.structured.findings && <StructuredLabResult data={msg.structured}/>}
-          {msg.structured && msg.structured.uses && <StructuredMedicineResult data={msg.structured}/>}
+          {msg.structured && msg.structured.findings && <StructuredLabResult data={msg.structured} />}
+          {msg.structured && msg.structured.uses && <StructuredMedicineResult data={msg.structured} />}
           {msg.structured?.findings && (
             <p style={{ margin: "10px 0 0", fontSize: 11, color: "rgba(255,255,255,0.4)", borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 8 }}>
               {msg.structured.disclaimer}
@@ -316,12 +328,12 @@ function TypingIndicator() {
   return (
     <div style={{ display: "flex", gap: 10, padding: "6px 0", alignItems: "flex-start" }}>
       <div style={{ width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #059669, #10b981)" }}>
-        <BotIcon/>
+        <BotIcon />
       </div>
       <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "4px 16px 16px 16px", padding: "14px 18px" }}>
         <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
           {[0, 1, 2].map(i => (
-            <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: "#10b981", animation: `bounce 1.2s ${i * 0.15}s infinite` }}/>
+            <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: "#10b981", animation: `bounce 1.2s ${i * 0.15}s infinite` }} />
           ))}
         </div>
       </div>
@@ -353,7 +365,7 @@ function UploadModal({ mode, onClose, onUpload }) {
             <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>{modeConfig.subtitle}</p>
           </div>
           <button onClick={onClose} style={{ background: "rgba(255,255,255,0.08)", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <CloseIcon/>
+            <CloseIcon />
           </button>
         </div>
 
@@ -369,7 +381,7 @@ function UploadModal({ mode, onClose, onUpload }) {
             transition: "all 0.2s", marginBottom: 16
           }}
         >
-          <input ref={fileInputRef} type="file" accept={modeConfig.accept} style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])}/>
+          <input ref={fileInputRef} type="file" accept={modeConfig.accept} style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
           {selectedFile ? (
             <>
               <div style={{ fontSize: 36, marginBottom: 8 }}>✅</div>
@@ -378,7 +390,7 @@ function UploadModal({ mode, onClose, onUpload }) {
             </>
           ) : (
             <>
-              <div style={{ color: "rgba(255,255,255,0.3)", marginBottom: 10 }}><UploadIcon/></div>
+              <div style={{ color: "rgba(255,255,255,0.3)", marginBottom: 10 }}><UploadIcon /></div>
               <p style={{ margin: 0, fontSize: 14, color: "rgba(255,255,255,0.5)" }}>Tap to upload or drag & drop</p>
               <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.25)" }}>{modeConfig.accept}</p>
             </>
@@ -440,7 +452,7 @@ function OTPModal({ onSuccess, onClose }) {
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{ width: 56, height: 56, borderRadius: 16, background: "linear-gradient(135deg, #059669, #10b981)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", boxShadow: "0 8px 24px rgba(16,185,129,0.3)" }}>
-            <HeartIcon/>
+            <HeartIcon />
           </div>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "white" }}>Anbu Health AI</h2>
           <p style={{ margin: "6px 0 0", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>Tamil Nadu Village Healthcare</p>
@@ -457,7 +469,7 @@ function OTPModal({ onSuccess, onClose }) {
             <p style={{ margin: "0 0 16px", fontSize: 14, color: "rgba(255,255,255,0.6)", textAlign: "center" }}>Phone number போடு — OTP வரும்</p>
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
               <div style={{ padding: "13px 12px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, fontSize: 14, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 4 }}>
-                <PhoneIcon/> +91
+                <PhoneIcon /> +91
               </div>
               <input
                 type="tel" maxLength={10} value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, ""))}
@@ -494,7 +506,7 @@ function OTPModal({ onSuccess, onClose }) {
 function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCount, onClose, visible }) {
   return (
     <>
-      {visible && <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40, display: "block" }}/>}
+      {visible && <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40, display: "block" }} />}
       <div style={{
         position: "fixed", left: 0, top: 0, height: "100%", width: 260,
         background: "#0d1117", borderRight: "1px solid rgba(255,255,255,0.07)",
@@ -506,7 +518,7 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCou
         <div style={{ padding: "20px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #059669, #10b981)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <HeartIcon/>
+              <HeartIcon />
             </div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 800, color: "white" }}>Anbu Health AI</div>
@@ -514,7 +526,7 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCou
             </div>
           </div>
           <button onClick={onNewChat} style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.7)", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit", transition: "background 0.15s" }}>
-            <NewChatIcon/> New Chat
+            <NewChatIcon /> New Chat
           </button>
         </div>
 
@@ -525,7 +537,7 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCou
             <span style={{ fontSize: 11, color: promptCount >= MAX_PROMPTS ? "#ef4444" : "#10b981", fontWeight: 600 }}>{promptCount}/{MAX_PROMPTS}</span>
           </div>
           <div style={{ height: 4, background: "rgba(255,255,255,0.08)", borderRadius: 2, overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${(promptCount / MAX_PROMPTS) * 100}%`, background: promptCount >= MAX_PROMPTS ? "#ef4444" : "linear-gradient(90deg, #059669, #10b981)", borderRadius: 2, transition: "width 0.3s" }}/>
+            <div style={{ height: "100%", width: `${(promptCount / MAX_PROMPTS) * 100}%`, background: promptCount >= MAX_PROMPTS ? "#ef4444" : "linear-gradient(90deg, #059669, #10b981)", borderRadius: 2, transition: "width 0.3s" }} />
           </div>
         </div>
 
@@ -534,7 +546,7 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCou
           <p style={{ margin: "8px 8px 6px", fontSize: 10, color: "rgba(255,255,255,0.25)", textTransform: "uppercase", letterSpacing: 1 }}>Recent Chats</p>
           {chats.map(chat => (
             <button key={chat.id} onClick={() => { onSelectChat(chat.id); onClose(); }} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "none", background: chat.id === activeChatId ? "rgba(16,185,129,0.12)" : "none", color: chat.id === activeChatId ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.5)", fontSize: 13, cursor: "pointer", textAlign: "left", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8, marginBottom: 2, transition: "all 0.15s" }}>
-              <HistoryIcon/>
+              <HistoryIcon />
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{chat.title}</span>
             </button>
           ))}
@@ -544,7 +556,7 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCou
         {user && (
           <div style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <UserIcon/>
+              <UserIcon />
             </div>
             <div>
               <div style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>+91 {user.phone}</div>
@@ -703,9 +715,9 @@ export default function AnbuHealthAI() {
   };
 
   const plusMenuItems = [
-    { icon: <LabIcon/>, label: "Lab Report", sublabel: "Blood test, sugar, urine", color: "#60a5fa", mode: "lab" },
-    { icon: <ScanIcon/>, label: "X-Ray / Scan", sublabel: "Chest, abdomen, MRI", color: "#a78bfa", mode: "scan" },
-    { icon: <PillIcon/>, label: "Medicine", sublabel: "Photo of medicine strip", color: "#34d399", mode: "medicine" },
+    { icon: <LabIcon />, label: "Lab Report", sublabel: "Blood test, sugar, urine", color: "#60a5fa", mode: "lab" },
+    { icon: <ScanIcon />, label: "X-Ray / Scan", sublabel: "Chest, abdomen, MRI", color: "#a78bfa", mode: "scan" },
+    { icon: <PillIcon />, label: "Medicine", sublabel: "Photo of medicine strip", color: "#34d399", mode: "medicine" },
   ];
 
   return (
@@ -722,7 +734,7 @@ export default function AnbuHealthAI() {
       `}</style>
 
       {/* OTP Modal */}
-      {showOTP && <OTPModal onSuccess={(u) => { setUser(u); setShowOTP(false); }} onClose={() => setShowOTP(false)}/>}
+      {showOTP && <OTPModal onSuccess={(u) => { setUser(u); setShowOTP(false); }} onClose={() => setShowOTP(false)} />}
 
       {/* Sidebar */}
       <Sidebar
@@ -733,22 +745,22 @@ export default function AnbuHealthAI() {
       />
 
       {/* Upload Modal */}
-      {showUploadModal && <UploadModal mode={uploadMode} onClose={() => setShowUploadModal(false)} onUpload={handleUpload}/>}
+      {showUploadModal && <UploadModal mode={uploadMode} onClose={() => setShowUploadModal(false)} onUpload={handleUpload} />}
 
       {/* Plus menu backdrop */}
-      {showPlusMenu && <div onClick={() => setShowPlusMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 20 }}/>}
+      {showPlusMenu && <div onClick={() => setShowPlusMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 20 }} />}
 
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.07)", background: "#0f1117", flexShrink: 0 }}>
         <button onClick={() => setSidebarOpen(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: 8, borderRadius: 8, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 8 }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
         </button>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg, #059669, #10b981)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>🏥</div>
           <span style={{ fontSize: 15, fontWeight: 700, color: "white" }}>Anbu Health AI</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 20, padding: "4px 10px" }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }}/>
+          <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
           <span style={{ fontSize: 11, color: "#10b981", fontWeight: 600 }}>Live</span>
         </div>
       </div>
@@ -757,16 +769,16 @@ export default function AnbuHealthAI() {
       <div style={{ flex: 1, overflowY: "auto", padding: "16px 16px 8px" }}>
         <div style={{ maxWidth: 680, margin: "0 auto" }}>
           {messages.length === 0 ? (
-            <WelcomeScreen onQuickPrompt={(text) => { setInputText(text); setTimeout(() => handleSend(text), 100); }}/>
+            <WelcomeScreen onQuickPrompt={(text) => { setInputText(text); setTimeout(() => handleSend(text), 100); }} />
           ) : (
             <>
               {messages.map((msg, i) => (
-                <MessageBubble key={msg.id} msg={msg} isLast={i === messages.length - 1}/>
+                <MessageBubble key={msg.id} msg={msg} isLast={i === messages.length - 1} />
               ))}
-              {isLoading && <TypingIndicator/>}
+              {isLoading && <TypingIndicator />}
             </>
           )}
-          <div ref={messagesEndRef}/>
+          <div ref={messagesEndRef} />
         </div>
       </div>
 
@@ -776,7 +788,7 @@ export default function AnbuHealthAI() {
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: 20, padding: "5px 12px" }}>
             <span style={{ fontSize: 13 }}>{pendingMode === "lab" ? "🧪" : pendingMode === "scan" ? "🩻" : "💊"}</span>
             <span style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>{pendingFile.name}</span>
-            <button onClick={() => { setPendingFile(null); setPendingMode(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.4)", padding: 0, display: "flex" }}><CloseIcon/></button>
+            <button onClick={() => { setPendingFile(null); setPendingMode(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.4)", padding: 0, display: "flex" }}><CloseIcon /></button>
           </div>
         </div>
       )}
@@ -800,7 +812,7 @@ export default function AnbuHealthAI() {
               onClick={() => setShowPlusMenu(p => !p)}
               style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: showPlusMenu ? "rgba(16,185,129,0.2)" : "rgba(255,255,255,0.07)", color: showPlusMenu ? "#10b981" : "rgba(255,255,255,0.5)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s", transform: showPlusMenu ? "rotate(45deg)" : "none" }}
             >
-              <PlusIcon/>
+              <PlusIcon />
             </button>
 
             {/* Plus dropdown */}
@@ -827,7 +839,7 @@ export default function AnbuHealthAI() {
             ref={inputRef}
             value={inputText}
             onChange={e => setInputText(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }}}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
             placeholder={isListening ? "🎤 Listening... (Tamil/English)" : "கேள்வி கேளுங்க... (Tamil or English)"}
             rows={1}
             disabled={promptCount >= MAX_PROMPTS}
@@ -839,7 +851,7 @@ export default function AnbuHealthAI() {
             onClick={handleVoice}
             style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: isListening ? "rgba(239,68,68,0.2)" : "rgba(255,255,255,0.07)", color: isListening ? "#ef4444" : "rgba(255,255,255,0.5)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s" }}
           >
-            <MicIcon active={isListening}/>
+            <MicIcon active={isListening} />
           </button>
 
           {/* Send */}
@@ -848,7 +860,7 @@ export default function AnbuHealthAI() {
             disabled={(!inputText.trim() && !pendingFile) || isLoading || promptCount >= MAX_PROMPTS}
             style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "linear-gradient(135deg, #059669, #10b981)" : "rgba(255,255,255,0.07)", color: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "white" : "rgba(255,255,255,0.25)", cursor: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s", boxShadow: (inputText.trim() || pendingFile) && !isLoading ? "0 4px 12px rgba(16,185,129,0.3)" : "none" }}
           >
-            <SendIcon/>
+            <SendIcon />
           </button>
         </div>
 
