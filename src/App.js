@@ -60,17 +60,6 @@ const UploadIcon = () => (
     <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
   </svg>
 );
-const CheckIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12" />
-  </svg>
-);
-const WarningIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-    <line x1="12" y1="9" x2="12" y2="13" stroke="white" strokeWidth="2" /><line x1="12" y1="17" x2="12.01" y2="17" stroke="white" strokeWidth="2" />
-  </svg>
-);
 const PhoneIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13.1a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.77 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 17z" />
@@ -88,74 +77,35 @@ const NewChatIcon = () => (
   </svg>
 );
 
-// ── Mock API (replace with real FastAPI calls) ─────────────────────────────────
-const MOCK_RESPONSES = {
-  lab: (filename) => ({
-    mode: "lab",
-    structured: {
-      summary: "Blood test results analyzed. Hemoglobin slightly below normal range.",
-      findings: ["Hemoglobin: 10.2 g/dL (Low — normal: 12–16)", "Blood Sugar: 108 mg/dL (Normal)", "WBC Count: 9,200/μL (Normal)", "Platelet Count: 1.8 Lakh/μL (Normal)"],
-      recommendation: "Eat iron-rich foods like spinach, dal, and jaggery. Follow up in 4 weeks.",
-      urgency: "medium",
-      disclaimer: "⚠️ இது மட்டும் தகவல். Doctor கிட்ட போயி பாருங்க."
-    },
-    answer: `உங்கள் ${filename} படிக்கப்பட்டது. Hemoglobin கொஞ்சம் குறைவாக இருக்கு (10.2 g/dL). Spinach, dal சாப்பிடுங்க. Blood sugar normal-ஆ இருக்கு.`
-  }),
-  scan: (filename) => ({
-    mode: "scan",
-    structured: {
-      summary: "Chest X-Ray analysis complete. No major abnormalities detected.",
-      findings: ["Lung fields: Clear", "Heart size: Normal", "Bones: Intact", "Diaphragm: Normal position"],
-      recommendation: "No immediate concern. Continue regular checkups.",
-      urgency: "low",
-      disclaimer: "⚠️ இது மட்டும் தகவல். Radiologist report வாங்குங்க."
-    },
-    answer: `${filename} scan பார்த்தேன். Lungs clear-ஆ இருக்கு. Heart size normal. Special concern இல்லை. Regular checkup continue பண்ணுங்க.`
-  }),
-  medicine: (filename) => ({
-    mode: "medicine",
-    structured: {
-      summary: "Paracetamol 500mg tablet identified.",
-      uses: ["Fever (காய்ச்சல்)", "Mild to moderate pain", "Headache (தலைவலி)"],
-      dosage: "Adults: 500mg–1000mg every 4–6 hours. Maximum: 4000mg/day",
-      sideEffects: ["Nausea (குமட்டல்) — rare", "Liver damage if overdosed"],
-      warnings: ["Do NOT exceed 4 tablets/day", "Avoid with alcohol", "Liver problem இருந்தா use வேண்டாம்"],
-      disclaimer: "⚠️ Doctor சொன்ன dosage மட்டும் எடுங்க."
-    },
-    answer: "Paracetamol 500mg tablet identify பண்ணினேன். Fever மற்றும் pain-க்கு use ஆகும். Adults: 1 tablet (500mg) every 6 hours. Day-ku maximum 4 tablets மட்டும்."
-  }),
-  general: (q) => ({
-    mode: "general",
-    answer: q.toLowerCase().includes("sugar") || q.toLowerCase().includes("diabetes")
-      ? "Diabetes control-க்கு: Daily exercise, less rice, more vegetables. Metformin எடுக்கிறீங்களா? Doctor கிட்ட HbA1c test பண்ணுங்க. Normal range: below 7%."
-      : q.toLowerCase().includes("bp") || q.toLowerCase().includes("pressure")
-        ? "Blood pressure-கு: Less salt, walk 30 minutes daily. Stress குறைக்கணும். ஒரு week-கு ஒரு முறை BP check பண்ணுங்க. Doctor advice follow பண்ணுங்க."
-        : "உங்கள் கேள்விக்கு நன்றி. இந்த symptom-க்கு doctor consultation recommend பண்றேன். More info தேவைன்னா ask பண்ணுங்க!",
-    structured: null
-  })
-};
-
+// ── API ────────────────────────────────────────────────────────────────────────
 const API_URL = "https://anbu-health-ai.kindrock-2ca528ff.centralindia.azurecontainerapps.io";
 
 async function callAnbuAPI(message, uploadedFile, mode) {
   const formData = new FormData();
   formData.append("question", message);
-  formData.append("mode", mode || "general");
+  // Only send mode when there's a file — otherwise always use "general"
+  formData.append("mode", (uploadedFile && mode) ? mode : "general");
   if (uploadedFile) formData.append("image", uploadedFile);
 
   const response = await fetch(`${API_URL}/api/analyze`, {
     method: "POST",
     body: formData,
   });
+
+  if (!response.ok) {
+    throw new Error(`Server error: ${response.status}`);
+  }
+
   const data = await response.json();
+  const answer = data.final_answer || data.buddhi?.draft_answer || "பதில் கிடைக்கவில்லை. மீண்டும் try பண்ணுங்க.";
   return {
     mode: data.mode,
-    answer: data.final_answer,
+    answer: answer,
     structured: data.buddhi?.structured_response,
   };
 }
 
-// ── Prompt counter (replace with Supabase) ─────────────────────────────────────
+// ── Prompt counter ─────────────────────────────────────────────────────────────
 const MAX_PROMPTS = 20;
 function getPromptData() {
   try {
@@ -172,62 +122,213 @@ function incrementPrompt() {
   return updated.count;
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
-
+// ── 1. IMPROVED StructuredLabResult ───────────────────────────────────────────
 function StructuredLabResult({ data }) {
-  const urgencyColor = { low: "#10b981", medium: "#f59e0b", high: "#ef4444" }[data.urgency] || "#6b7280";
+  if (!data) return null;
+  const urgency = data.urgency || "low";
+  const urgencyConfig = {
+    low:    { color: "#10b981", bg: "rgba(16,185,129,0.08)",  border: "rgba(16,185,129,0.2)",  label: "✅ Normal",    icon: "🟢" },
+    medium: { color: "#f59e0b", bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.2)",  label: "⚠️ Attention", icon: "🟡" },
+    high:   { color: "#ef4444", bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.2)",   label: "🚨 Urgent",   icon: "🔴" },
+  }[urgency] || { color: "#10b981", bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.2)", label: "Normal", icon: "🟢" };
+
+  const findings = data.findings || [];
+  const recommendation = data.recommendation || data.summary || "";
+
   return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-        <span style={{ width: 8, height: 8, borderRadius: "50%", background: urgencyColor, display: "block" }} />
-        <span style={{ fontSize: 11, color: urgencyColor, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>
-          {data.urgency === "low" ? "Normal" : data.urgency === "medium" ? "Attention" : "Urgent"} • Lab Report
+    <div style={{ marginTop: 14 }}>
+      {/* Status badge */}
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: urgencyConfig.bg, border: `1px solid ${urgencyConfig.border}`, borderRadius: 20, padding: "4px 12px", marginBottom: 12 }}>
+        <span style={{ fontSize: 12 }}>{urgencyConfig.icon}</span>
+        <span style={{ fontSize: 11, color: urgencyConfig.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8 }}>
+          {urgencyConfig.label} • Lab Report
         </span>
       </div>
-      <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: "12px 14px", marginBottom: 10, border: "1px solid rgba(255,255,255,0.07)" }}>
-        {data.findings.map((f, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "5px 0", borderBottom: i < data.findings.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
-            <span style={{ color: f.includes("Low") || f.includes("High") ? "#f59e0b" : "#10b981", marginTop: 1, flexShrink: 0 }}>
-              {f.includes("Low") || f.includes("High") ? <WarningIcon /> : <CheckIcon />}
-            </span>
-            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.5 }}>{f}</span>
+
+      {/* Findings grid */}
+      {findings.length > 0 && (
+        <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.07)", overflow: "hidden", marginBottom: 10 }}>
+          <div style={{ padding: "8px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12 }}>🧪</span>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>Test Results</span>
           </div>
-        ))}
-      </div>
-      <div style={{ background: "rgba(16,185,129,0.08)", borderRadius: 8, padding: "10px 12px", border: "1px solid rgba(16,185,129,0.2)", fontSize: 13, color: "rgba(255,255,255,0.75)", lineHeight: 1.6 }}>
-        💡 {data.recommendation}
-      </div>
+          {findings.map((f, i) => {
+            const isAbnormal = f.includes("High") || f.includes("Low") || f.includes("HIGH") || f.includes("LOW") || f.includes("↑") || f.includes("↓");
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: i < findings.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none", background: isAbnormal ? "rgba(245,158,11,0.04)" : "none" }}>
+                <span style={{ fontSize: 14, flexShrink: 0 }}>{isAbnormal ? "⚠️" : "✅"}</span>
+                <span style={{ fontSize: 13, color: isAbnormal ? "#fbbf24" : "rgba(255,255,255,0.78)", lineHeight: 1.4, flex: 1 }}>{f}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Recommendation */}
+      {recommendation && (
+        <div style={{ display: "flex", gap: 10, background: "rgba(16,185,129,0.07)", border: "1px solid rgba(16,185,129,0.18)", borderRadius: 10, padding: "10px 14px" }}>
+          <span style={{ fontSize: 16, flexShrink: 0 }}>💡</span>
+          <div>
+            <div style={{ fontSize: 11, color: "#10b981", fontWeight: 600, marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.7 }}>Doctor-கிட்ட சொல்லுங்க</div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.72)", lineHeight: 1.55 }}>{recommendation}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Disclaimer */}
+      {data.disclaimer && (
+        <p style={{ margin: "10px 0 0", fontSize: 11, color: "rgba(255,255,255,0.35)", borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 8 }}>
+          {data.disclaimer}
+        </p>
+      )}
     </div>
   );
 }
 
-function StructuredMedicineResult({ data }) {
+// ── 2. NEW StructuredScanResult ────────────────────────────────────────────────
+function StructuredScanResult({ data }) {
+  if (!data) return null;
+  const urgency = data.urgency || "low";
+  const urgencyConfig = {
+    low:    { color: "#10b981", bg: "rgba(16,185,129,0.08)",  border: "rgba(16,185,129,0.2)",  label: "✅ Clear",    icon: "🟢" },
+    medium: { color: "#f59e0b", bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.2)",  label: "⚠️ Attention", icon: "🟡" },
+    high:   { color: "#ef4444", bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.2)",   label: "🚨 Urgent",   icon: "🔴" },
+  }[urgency] || { color: "#10b981", bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.2)", label: "Clear", icon: "🟢" };
+
+  const findings = data.findings || [];
+  const recommendation = data.recommendation || data.summary || "";
+
   return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-        <span style={{ fontSize: 11, color: "#a78bfa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>💊 Medicine Info</span>
+    <div style={{ marginTop: 14 }}>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: urgencyConfig.bg, border: `1px solid ${urgencyConfig.border}`, borderRadius: 20, padding: "4px 12px", marginBottom: 12 }}>
+        <span style={{ fontSize: 12 }}>{urgencyConfig.icon}</span>
+        <span style={{ fontSize: 11, color: urgencyConfig.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8 }}>
+          {urgencyConfig.label} • Scan / X-Ray
+        </span>
       </div>
-      {[
-        { label: "Uses / பயன்பாடு", items: data.uses || [], color: "#60a5fa" },
-        { label: "Side Effects / பக்க விளைவுகள்", items: data.sideEffects || data.side_effects || [], color: "#f59e0b" },
-        { label: "Warnings / எச்சரிக்கை", items: data.warnings || [], color: "#ef4444" },
-      ].map(({ label, items, color }) => (
-        <div key={label} style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 11, color, fontWeight: 600, marginBottom: 5, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-            {items.map((item, i) => (
-              <span key={i} style={{ background: `${color}15`, border: `1px solid ${color}30`, borderRadius: 20, padding: "3px 10px", fontSize: 12, color: "rgba(255,255,255,0.75)" }}>{item}</span>
+
+      {findings.length > 0 && (
+        <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.07)", overflow: "hidden", marginBottom: 10 }}>
+          <div style={{ padding: "8px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12 }}>🩻</span>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>Scan Findings</span>
+          </div>
+          {findings.map((f, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderBottom: i < findings.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
+              <span style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", flexShrink: 0, marginTop: 1 }}>→</span>
+              <span style={{ fontSize: 13, color: "rgba(255,255,255,0.78)", lineHeight: 1.4 }}>{f}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {recommendation && (
+        <div style={{ display: "flex", gap: 10, background: "rgba(167,139,250,0.07)", border: "1px solid rgba(167,139,250,0.18)", borderRadius: 10, padding: "10px 14px" }}>
+          <span style={{ fontSize: 16, flexShrink: 0 }}>🏥</span>
+          <div>
+            <div style={{ fontSize: 11, color: "#a78bfa", fontWeight: 600, marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.7 }}>Next Step</div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.72)", lineHeight: 1.55 }}>{recommendation}</div>
+          </div>
+        </div>
+      )}
+
+      {data.disclaimer && (
+        <p style={{ margin: "10px 0 0", fontSize: 11, color: "rgba(255,255,255,0.35)", borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 8 }}>
+          {data.disclaimer}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── 3. IMPROVED StructuredMedicineResult ──────────────────────────────────────
+function StructuredMedicineResult({ data }) {
+  if (!data) return null;
+  const uses = data.uses || data.use || [];
+  const sideEffects = data.sideEffects || data.side_effects || [];
+  const warnings = data.warnings || [];
+  const dosage = data.dosage || "";
+  const summary = data.summary || "";
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      {/* Header badge */}
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.2)", borderRadius: 20, padding: "4px 12px", marginBottom: 12 }}>
+        <span style={{ fontSize: 12 }}>💊</span>
+        <span style={{ fontSize: 11, color: "#34d399", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8 }}>Medicine Info</span>
+      </div>
+
+      {/* Summary */}
+      {summary && (
+        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", fontStyle: "italic", marginBottom: 10, padding: "0 4px" }}>{summary}</div>
+      )}
+
+      {/* Uses */}
+      {uses.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: "#60a5fa", fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.8, display: "flex", alignItems: "center", gap: 5 }}>
+            <span>✅</span> Uses / பயன்பாடு
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {uses.map((item, i) => (
+              <span key={i} style={{ background: "rgba(96,165,250,0.1)", border: "1px solid rgba(96,165,250,0.25)", borderRadius: 20, padding: "4px 12px", fontSize: 12, color: "rgba(255,255,255,0.8)" }}>{item}</span>
             ))}
           </div>
         </div>
-      ))}
-      <div style={{ background: "rgba(139,92,246,0.08)", borderRadius: 8, padding: "8px 12px", border: "1px solid rgba(139,92,246,0.2)", fontSize: 12, color: "rgba(255,255,255,0.6)" }}>
-        📏 Dosage: {data.dosage}
-      </div>
+      )}
+
+      {/* Dosage */}
+      {dosage && (
+        <div style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.22)", borderRadius: 10, padding: "10px 14px", marginBottom: 10, display: "flex", gap: 10 }}>
+          <span style={{ fontSize: 16, flexShrink: 0 }}>📏</span>
+          <div>
+            <div style={{ fontSize: 11, color: "#818cf8", fontWeight: 600, marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.7 }}>Dosage / அளவு</div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", fontWeight: 500 }}>{dosage}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Side Effects */}
+      {sideEffects.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.8, display: "flex", alignItems: "center", gap: 5 }}>
+            <span>⚠️</span> Side Effects / பக்க விளைவுகள்
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {sideEffects.map((item, i) => (
+              <span key={i} style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.22)", borderRadius: 20, padding: "4px 12px", fontSize: 12, color: "rgba(255,255,255,0.75)" }}>{item}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Warnings */}
+      {warnings.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, color: "#ef4444", fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.8, display: "flex", alignItems: "center", gap: 5 }}>
+            <span>🚫</span> Warnings / எச்சரிக்கை
+          </div>
+          <div style={{ background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 10, overflow: "hidden" }}>
+            {warnings.map((item, i) => (
+              <div key={i} style={{ padding: "7px 12px", borderBottom: i < warnings.length - 1 ? "1px solid rgba(239,68,68,0.1)" : "none", fontSize: 12, color: "#fca5a5", display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <span style={{ flexShrink: 0 }}>•</span><span>{item}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Disclaimer */}
+      {data.disclaimer && (
+        <p style={{ margin: "10px 0 0", fontSize: 11, color: "rgba(255,255,255,0.35)", borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 8 }}>
+          {data.disclaimer}
+        </p>
+      )}
     </div>
   );
 }
 
+// ── MessageBubble ──────────────────────────────────────────────────────────────
 function MessageBubble({ msg, isLast }) {
   const isUser = msg.role === "user";
   const [audioPlaying, setAudioPlaying] = useState(false);
@@ -243,11 +344,14 @@ function MessageBubble({ msg, isLast }) {
     window.speechSynthesis.speak(utter);
   };
 
+  // ── 4. FIXED: determine which structured card to show ──────────────────────
+  const hasLabOrScan = msg.structured && (msg.fileMode === "lab" || msg.fileMode === "scan") && (msg.structured.findings || msg.structured.urgency);
+  const hasMedicine  = msg.structured && msg.fileMode === "medicine" && (msg.structured.uses || msg.structured.dosage || msg.structured.side_effects || msg.structured.sideEffects);
+  const isScan       = msg.fileMode === "scan";
+
   return (
     <div style={{
-      display: "flex",
-      gap: 10,
-      padding: "6px 0",
+      display: "flex", gap: 10, padding: "6px 0",
       flexDirection: isUser ? "row-reverse" : "row",
       alignItems: "flex-start",
       animation: isLast ? "slideUp 0.3s ease" : "none"
@@ -266,7 +370,7 @@ function MessageBubble({ msg, isLast }) {
 
       {/* Bubble */}
       <div style={{ maxWidth: "75%", minWidth: 80 }}>
-        {/* Upload preview */}
+        {/* Upload preview chip */}
         {msg.file && (
           <div style={{
             background: "rgba(255,255,255,0.06)", borderRadius: "12px 12px 0 0", padding: "8px 12px",
@@ -286,7 +390,7 @@ function MessageBubble({ msg, isLast }) {
             ? "1px solid rgba(99,102,241,0.35)"
             : "1px solid rgba(255,255,255,0.08)",
           borderRadius: msg.file
-            ? (isUser ? "0 12px 12px 12px" : "0 12px 12px 12px")
+            ? "0 12px 12px 12px"
             : (isUser ? "16px 4px 16px 16px" : "4px 16px 16px 16px"),
           padding: "11px 14px",
         }}>
@@ -294,23 +398,24 @@ function MessageBubble({ msg, isLast }) {
             {msg.content}
           </p>
 
-          {/* Structured results */}
-          {msg.structured && msg.structured.findings && <StructuredLabResult data={msg.structured} />}
-          {msg.structured && msg.structured.uses && <StructuredMedicineResult data={msg.structured} />}
-          {msg.structured?.findings && (
-            <p style={{ margin: "10px 0 0", fontSize: 11, color: "rgba(255,255,255,0.4)", borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 8 }}>
-              {msg.structured.disclaimer}
-            </p>
+          {/* ── Structured result cards (fixed routing) ── */}
+          {hasLabOrScan && !hasMedicine && (
+            isScan
+              ? <StructuredScanResult data={msg.structured} />
+              : <StructuredLabResult data={msg.structured} />
+          )}
+          {hasMedicine && (
+            <StructuredMedicineResult data={msg.structured} />
           )}
         </div>
 
-        {/* Actions row */}
+        {/* Listen / timestamp row */}
         {!isUser && (
           <div style={{ display: "flex", gap: 8, marginTop: 5, paddingLeft: 4 }}>
             <button onClick={speakText} style={{
-              display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: audioPlaying ? "#10b981" : "rgba(255,255,255,0.35)",
-              background: "none", border: "none", cursor: "pointer", padding: "2px 6px", borderRadius: 4,
-              transition: "color 0.2s"
+              display: "flex", alignItems: "center", gap: 4, fontSize: 11,
+              color: audioPlaying ? "#10b981" : "rgba(255,255,255,0.35)",
+              background: "none", border: "none", cursor: "pointer", padding: "2px 6px", borderRadius: 4, transition: "color 0.2s"
             }}>
               {audioPlaying ? "🔊 Playing..." : "🔈 Listen (Tamil)"}
             </button>
@@ -347,9 +452,9 @@ function UploadModal({ mode, onClose, onUpload }) {
   const fileInputRef = useRef();
 
   const modeConfig = {
-    lab: { emoji: "🧪", title: "Lab Report Upload", subtitle: "Blood test, urine test, sugar report", color: "#60a5fa", accept: ".pdf,.jpg,.jpeg,.png" },
-    scan: { emoji: "🩻", title: "X-Ray / Scan Upload", subtitle: "Chest X-ray, ultrasound, MRI scan", color: "#a78bfa", accept: ".jpg,.jpeg,.png,.dicom" },
-    medicine: { emoji: "💊", title: "Medicine Photo", subtitle: "Take a photo of medicine strip or box", color: "#34d399", accept: ".jpg,.jpeg,.png" },
+    lab:      { emoji: "🧪", title: "Lab Report Upload",  subtitle: "Blood test, urine test, sugar report",  color: "#60a5fa", accept: ".pdf,.jpg,.jpeg,.png" },
+    scan:     { emoji: "🩻", title: "X-Ray / Scan Upload", subtitle: "Chest X-ray, ultrasound, MRI scan",     color: "#a78bfa", accept: ".jpg,.jpeg,.png,.dicom" },
+    medicine: { emoji: "💊", title: "Medicine Photo",      subtitle: "Take a photo of medicine strip or box", color: "#34d399", accept: ".jpg,.jpeg,.png" },
   }[mode];
 
   const handleFile = (file) => setSelectedFile(file);
@@ -407,8 +512,8 @@ function UploadModal({ mode, onClose, onUpload }) {
             style={{
               flex: 2, padding: "11px 0", borderRadius: 10, border: "none",
               background: selectedFile ? `linear-gradient(135deg, ${modeConfig.color}, ${modeConfig.color}bb)` : "rgba(255,255,255,0.08)",
-              color: selectedFile ? "white" : "rgba(255,255,255,0.3)", fontSize: 14, fontWeight: 600, cursor: selectedFile ? "pointer" : "default",
-              transition: "all 0.2s"
+              color: selectedFile ? "white" : "rgba(255,255,255,0.3)", fontSize: 14, fontWeight: 600,
+              cursor: selectedFile ? "pointer" : "default", transition: "all 0.2s"
             }}
           >
             Analyze {modeConfig.emoji}
@@ -422,7 +527,7 @@ function UploadModal({ mode, onClose, onUpload }) {
 function OTPModal({ onSuccess, onClose }) {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
-  const [step, setStep] = useState("phone"); // phone | otp | success
+  const [step, setStep] = useState("phone");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -438,18 +543,17 @@ function OTPModal({ onSuccess, onClose }) {
     setLoading(true); setError("");
     await new Promise(r => setTimeout(r, 800));
     setLoading(false);
-    if (otp === "123456" || otp.length === 6) {
+    if (otp.length === 6) {
       setStep("success");
       setTimeout(() => onSuccess({ phone }), 1200);
     } else {
-      setError("Wrong OTP. Try again."); setLoading(false);
+      setError("Wrong OTP. Try again.");
     }
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
       <div style={{ background: "#0f1117", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 24, padding: 32, width: "100%", maxWidth: 360, animation: "slideUp 0.4s ease" }}>
-        {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{ width: 56, height: 56, borderRadius: 16, background: "linear-gradient(135deg, #059669, #10b981)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", boxShadow: "0 8px 24px rgba(16,185,129,0.3)" }}>
             <HeartIcon />
@@ -506,7 +610,7 @@ function OTPModal({ onSuccess, onClose }) {
 function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCount, onClose, visible }) {
   return (
     <>
-      {visible && <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40, display: "block" }} />}
+      {visible && <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40 }} />}
       <div style={{
         position: "fixed", left: 0, top: 0, height: "100%", width: 260,
         background: "#0d1117", borderRight: "1px solid rgba(255,255,255,0.07)",
@@ -514,7 +618,6 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCou
         transform: visible ? "translateX(0)" : "translateX(-100%)",
         transition: "transform 0.3s cubic-bezier(0.4,0,0.2,1)"
       }}>
-        {/* Header */}
         <div style={{ padding: "20px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #059669, #10b981)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -530,18 +633,16 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCou
           </button>
         </div>
 
-        {/* Prompt count */}
         <div style={{ padding: "10px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
             <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Today's prompts</span>
             <span style={{ fontSize: 11, color: promptCount >= MAX_PROMPTS ? "#ef4444" : "#10b981", fontWeight: 600 }}>{promptCount}/{MAX_PROMPTS}</span>
           </div>
           <div style={{ height: 4, background: "rgba(255,255,255,0.08)", borderRadius: 2, overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${(promptCount / MAX_PROMPTS) * 100}%`, background: promptCount >= MAX_PROMPTS ? "#ef4444" : "linear-gradient(90deg, #059669, #10b981)", borderRadius: 2, transition: "width 0.3s" }} />
+            <div style={{ height: "100%", width: `${Math.min((promptCount / MAX_PROMPTS) * 100, 100)}%`, background: promptCount >= MAX_PROMPTS ? "#ef4444" : "linear-gradient(90deg, #059669, #10b981)", borderRadius: 2, transition: "width 0.3s" }} />
           </div>
         </div>
 
-        {/* Chat history */}
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 8px" }}>
           <p style={{ margin: "8px 8px 6px", fontSize: 10, color: "rgba(255,255,255,0.25)", textTransform: "uppercase", letterSpacing: 1 }}>Recent Chats</p>
           {chats.map(chat => (
@@ -552,7 +653,6 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCou
           ))}
         </div>
 
-        {/* User */}
         {user && (
           <div style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -569,13 +669,12 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCou
   );
 }
 
-// ── Welcome Screen ─────────────────────────────────────────────────────────────
 function WelcomeScreen({ onQuickPrompt }) {
   const suggestions = [
-    { icon: "🩸", text: "Sugar test result explain பண்ணு", mode: null },
-    { icon: "💊", text: "Paracetamol dosage என்ன?", mode: null },
-    { icon: "❤️", text: "BP high-ஆ இருக்கு, என்ன சாப்பிடணும்?", mode: null },
-    { icon: "🤒", text: "Fever 3 days-ஆ இருக்கு, என்ன பண்றது?", mode: null },
+    { icon: "🩸", text: "Sugar test result explain பண்ணு" },
+    { icon: "💊", text: "Paracetamol dosage என்ன?" },
+    { icon: "❤️", text: "BP high-ஆ இருக்கு, என்ன சாப்பிடணும்?" },
+    { icon: "🤒", text: "Fever 3 days-ஆ இருக்கு, என்ன பண்றது?" },
   ];
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, padding: "20px 20px 0", textAlign: "center" }}>
@@ -622,9 +721,7 @@ export default function AnbuHealthAI() {
   const [pendingFile, setPendingFile] = useState(null);
   const [pendingMode, setPendingMode] = useState(null);
 
-  const [chats, setChats] = useState([
-    { id: "c1", title: "New Chat", messages: [] }
-  ]);
+  const [chats, setChats] = useState([{ id: "c1", title: "New Chat", messages: [] }]);
   const [activeChatId, setActiveChatId] = useState("c1");
 
   const messagesEndRef = useRef(null);
@@ -646,7 +743,6 @@ export default function AnbuHealthAI() {
       rec.lang = "ta-IN";
       rec.continuous = false;
       rec.interimResults = false;
-      rec.onresult = (e) => { setInputText(e.results[0][0].transcript); setIsListening(false); };
       rec.onend = () => setIsListening(false);
       rec.onerror = () => setIsListening(false);
       recognitionRef.current = rec;
@@ -661,8 +757,8 @@ export default function AnbuHealthAI() {
     } : c));
   }, []);
 
-  const handleSend = async (textOverride) => {
-    const text = textOverride || inputText.trim();
+  const handleSend = useCallback(async (textOverride) => {
+    const text = (typeof textOverride === "string" ? textOverride : inputText).trim();
     if (!text && !pendingFile) return;
     if (promptCount >= MAX_PROMPTS) return;
 
@@ -673,51 +769,73 @@ export default function AnbuHealthAI() {
       timestamp: Date.now()
     };
 
+    // Capture before clearing
+    const fileForAPI = pendingFile;
+    const modeForAPI = pendingMode;
+
     addMessage(activeChatId, userMsg);
-    setInputText(""); setPendingFile(null); setPendingMode(null);
+    setInputText("");
+    setPendingFile(null);
+    setPendingMode(null);
     setIsLoading(true);
 
     const newCount = incrementPrompt();
     setPromptCount(newCount);
 
     try {
-      const result = await callAnbuAPI(msgText, pendingFile, pendingMode);
+      const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI);
       const botMsg = {
         id: Date.now() + 1, role: "assistant",
         content: result.answer,
         structured: result.structured,
+        fileMode: modeForAPI,
         timestamp: Date.now()
       };
       addMessage(activeChatId, botMsg);
-    } catch (e) {
+    } catch {
       addMessage(activeChatId, { id: Date.now() + 1, role: "assistant", content: "Sorry, error ஆச்சு. Try again.", timestamp: Date.now() });
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [inputText, pendingFile, pendingMode, promptCount, activeChatId, addMessage]);
 
   const handleUpload = (file, mode) => {
-    setPendingFile(file); setPendingMode(mode);
+    setPendingFile(file);
+    setPendingMode(mode);
     setShowUploadModal(false);
     inputRef.current?.focus();
   };
 
+  // ── 5. FIXED handleVoice — auto-submits after speech ─────────────────────
   const handleVoice = () => {
     if (!recognitionRef.current) { alert("Voice not supported in this browser"); return; }
-    if (isListening) { recognitionRef.current.stop(); setIsListening(false); }
-    else { recognitionRef.current.start(); setIsListening(true); }
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      recognitionRef.current.onresult = (e) => {
+        const transcript = e.results[0][0].transcript;
+        setInputText(transcript);
+        setIsListening(false);
+        // Auto-submit after 800ms so user can see what was captured
+        setTimeout(() => handleSend(transcript), 800);
+      };
+      recognitionRef.current.start();
+      setIsListening(true);
+    }
   };
 
   const handleNewChat = () => {
     const newId = `c${Date.now()}`;
     setChats(prev => [{ id: newId, title: "New Chat", messages: [] }, ...prev]);
-    setActiveChatId(newId); setSidebarOpen(false);
+    setActiveChatId(newId);
+    setSidebarOpen(false);
   };
 
   const plusMenuItems = [
-    { icon: <LabIcon />, label: "Lab Report", sublabel: "Blood test, sugar, urine", color: "#60a5fa", mode: "lab" },
-    { icon: <ScanIcon />, label: "X-Ray / Scan", sublabel: "Chest, abdomen, MRI", color: "#a78bfa", mode: "scan" },
-    { icon: <PillIcon />, label: "Medicine", sublabel: "Photo of medicine strip", color: "#34d399", mode: "medicine" },
+    { icon: <LabIcon />,  label: "Lab Report",   sublabel: "Blood test, sugar, urine",  color: "#60a5fa", mode: "lab" },
+    { icon: <ScanIcon />, label: "X-Ray / Scan",  sublabel: "Chest, abdomen, MRI",       color: "#a78bfa", mode: "scan" },
+    { icon: <PillIcon />, label: "Medicine",      sublabel: "Photo of medicine strip",   color: "#34d399", mode: "medicine" },
   ];
 
   return (
@@ -726,17 +844,16 @@ export default function AnbuHealthAI() {
         @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes bounce { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }
         @keyframes pulse { 0%, 100% { box-shadow: 0 12px 32px rgba(16,185,129,0.3); } 50% { box-shadow: 0 12px 48px rgba(16,185,129,0.55); } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         * { box-sizing: border-box; }
         input, button { font-family: inherit; }
         textarea:focus { outline: none; }
-        ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
       `}</style>
 
-      {/* OTP Modal */}
       {showOTP && <OTPModal onSuccess={(u) => { setUser(u); setShowOTP(false); }} onClose={() => setShowOTP(false)} />}
 
-      {/* Sidebar */}
       <Sidebar
         visible={sidebarOpen} onClose={() => setSidebarOpen(false)}
         chats={chats} activeChatId={activeChatId}
@@ -744,15 +861,13 @@ export default function AnbuHealthAI() {
         user={user} promptCount={promptCount}
       />
 
-      {/* Upload Modal */}
       {showUploadModal && <UploadModal mode={uploadMode} onClose={() => setShowUploadModal(false)} onUpload={handleUpload} />}
 
-      {/* Plus menu backdrop */}
       {showPlusMenu && <div onClick={() => setShowPlusMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 20 }} />}
 
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.07)", background: "#0f1117", flexShrink: 0 }}>
-        <button onClick={() => setSidebarOpen(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: 8, borderRadius: 8, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 8 }}>
+        <button onClick={() => setSidebarOpen(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: 8, borderRadius: 8, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center" }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
         </button>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -765,7 +880,7 @@ export default function AnbuHealthAI() {
         </div>
       </div>
 
-      {/* Messages Area */}
+      {/* Messages */}
       <div style={{ flex: 1, overflowY: "auto", padding: "16px 16px 8px" }}>
         <div style={{ maxWidth: 680, margin: "0 auto" }}>
           {messages.length === 0 ? (
@@ -804,7 +919,7 @@ export default function AnbuHealthAI() {
 
       {/* Input Area */}
       <div style={{ padding: "8px 16px 16px", flexShrink: 0, maxWidth: 696, margin: "0 auto", width: "100%" }}>
-        <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 16, display: "flex", alignItems: "flex-end", gap: 4, padding: "10px 12px", transition: "border-color 0.2s" }}>
+        <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 16, display: "flex", alignItems: "flex-end", gap: 4, padding: "10px 12px" }}>
 
           {/* Plus button */}
           <div style={{ position: "relative", flexShrink: 0 }}>
@@ -815,11 +930,11 @@ export default function AnbuHealthAI() {
               <PlusIcon />
             </button>
 
-            {/* Plus dropdown */}
             {showPlusMenu && (
               <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: 0, background: "#1a1f2e", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: 8, minWidth: 220, zIndex: 30, animation: "slideUp 0.2s ease", boxShadow: "0 16px 48px rgba(0,0,0,0.5)" }}>
                 {plusMenuItems.map(item => (
-                  <button key={item.mode} onClick={() => { setUploadMode(item.mode); setShowUploadModal(true); setShowPlusMenu(false); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "none", background: "none", color: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit", transition: "background 0.15s" }}
+                  <button key={item.mode} onClick={() => { setUploadMode(item.mode); setShowUploadModal(true); setShowPlusMenu(false); }}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "none", background: "none", color: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit", transition: "background 0.15s" }}
                     onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
                     onMouseLeave={e => e.currentTarget.style.background = "none"}
                   >
@@ -858,7 +973,14 @@ export default function AnbuHealthAI() {
           <button
             onClick={() => handleSend()}
             disabled={(!inputText.trim() && !pendingFile) || isLoading || promptCount >= MAX_PROMPTS}
-            style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "linear-gradient(135deg, #059669, #10b981)" : "rgba(255,255,255,0.07)", color: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "white" : "rgba(255,255,255,0.25)", cursor: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s", boxShadow: (inputText.trim() || pendingFile) && !isLoading ? "0 4px 12px rgba(16,185,129,0.3)" : "none" }}
+            style={{
+              width: 36, height: 36, borderRadius: 10, border: "none",
+              background: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "linear-gradient(135deg, #059669, #10b981)" : "rgba(255,255,255,0.07)",
+              color: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "white" : "rgba(255,255,255,0.25)",
+              cursor: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "pointer" : "default",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s",
+              boxShadow: (inputText.trim() || pendingFile) && !isLoading ? "0 4px 12px rgba(16,185,129,0.3)" : "none"
+            }}
           >
             <SendIcon />
           </button>
