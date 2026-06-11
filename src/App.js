@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
 // ── Icons (inline SVG components) ─────────────────────────────────────────────
 const SendIcon = () => (
@@ -140,11 +140,6 @@ const C = {
   rowValue: { color: "rgba(255,255,255,0.88)", fontWeight: 500, flex: 1 },
   pill: (color) => ({ display: "inline-block", fontSize: 12, padding: "3px 10px", borderRadius: 20, fontWeight: 500, background: color + "1a", border: `1px solid ${color}44`, color: color }),
 };
-const pillBlue  = C.pill("#60a5fa");
-const pillGreen = C.pill("#34d399");
-const pillRed   = C.pill("#f87171");
-const pillAmber = C.pill("#fbbf24");
-const pillGray  = C.pill("rgba(255,255,255,0.5)");
 
 function SectionLabel({ children }) {
   return <div style={C.sectionLabel}>{children}</div>;
@@ -152,41 +147,14 @@ function SectionLabel({ children }) {
 function Card({ children, style }) {
   return <div style={{ ...C.card, ...style }}>{children}</div>;
 }
-function RowItem({ label, value, style }) {
-  return (
-    <div style={{ ...C.row, ...style }}>
-      <span style={C.rowLabel}>{label}</span>
-      <span style={C.rowValue}>{value}</span>
-    </div>
-  );
-}
-function FollowUpButtons({ prompts, onSend }) {
-  if (!prompts || prompts.length === 0) return null;
-  return (
-    <Card>
-      <SectionLabel>💬 இதை கேளுங்க</SectionLabel>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {prompts.map((p, i) => (
-          <button key={i} onClick={() => onSend && onSend(p)} style={{ fontSize: 12, padding: "5px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.65)", cursor: "pointer", fontFamily: "inherit" }}>
-            {p} ↗
-          </button>
-        ))}
-      </div>
-    </Card>
-  );
-}
+// RowItem removed (unused)
+// FollowUpButtons removed (unused)
 
 // ── 1. StructuredLabResult — matches client-approved lab template ─────────────
 function StructuredLabResult({ data, onFollowUp }) {
   const [lang, setLang] = useState("en");
   if (!data) return null;
-  const urgency = data.urgency || "low";
-  const urgencyMap = {
-    low:    { color:"#34d399", bg:"rgba(52,211,153,0.08)",  border:"rgba(52,211,153,0.25)",  label:"All Normal" },
-    medium: { color:"#fbbf24", bg:"rgba(251,191,36,0.08)",  border:"rgba(251,191,36,0.25)",  label:"Some Abnormal" },
-    high:   { color:"#f87171", bg:"rgba(248,113,113,0.08)", border:"rgba(248,113,113,0.25)", label:"Urgent Review" },
-  };
-  const uc = urgencyMap[urgency] || urgencyMap.low;
+  // urgency display handled inline
   const findings   = data.findings || [];
   const abnormal   = data.abnormal_findings || findings.filter(f => /HIGH|LOW/i.test(f));
   const normalF    = data.normal_findings  || findings.filter(f => !/HIGH|LOW/i.test(f));
@@ -495,7 +463,7 @@ function StructuredMedicineResult({ data, onFollowUp }) {
   const alternatives= data.alternatives|| [];
   const summary     = data.summary     || "";
   const summaryTa   = data.summary_tamil||summary;
-  const rec         = data.recommendation||"";
+  const rec         = data.recommendation || "";
   const disclaimer  = data.disclaimer  || "Educational information only — always follow your doctor's prescription.";
   const isRx        = data.is_rx!==undefined?data.is_rx:true;
   const mid         = Math.ceil(sideEffects.length/2);
@@ -634,6 +602,12 @@ function StructuredMedicineResult({ data, onFollowUp }) {
           <span style={{ flexShrink:0 }}>🚨</span><span><strong>Overdose:</strong> Seek emergency care immediately — even without symptoms. Liver damage may appear 1–3 days later.</span>
         </div>
       </div>
+      {rec&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Doctor Advice</span>
+          <p style={{ fontSize:13,lineHeight:1.7,color:"rgba(255,255,255,0.82)",margin:0 }}>{rec}</p>
+        </div>
+      )}
       {alternatives.length>0&&(
         <div style={S.card}>
           <span style={S.lbl}>Alternatives / Similar Medicines</span>
@@ -1056,7 +1030,8 @@ export default function AnbuHealthAI() {
   const handleSendRef = useRef(null);
 
   const activeChat = chats.find(c => c.id === activeChatId);
-  const messages = activeChat?.messages || [];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const messages = useMemo(() => activeChat?.messages || [], [activeChatId, chats]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
