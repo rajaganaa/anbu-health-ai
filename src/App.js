@@ -986,6 +986,7 @@ export default function AnbuHealthAI() {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
+  const handleSendRef = useRef(null);
 
   const activeChat = chats.find(c => c.id === activeChatId);
   const messages = activeChat?.messages || [];
@@ -1058,6 +1059,9 @@ export default function AnbuHealthAI() {
     }
   }, [inputText, pendingFile, pendingMode, promptCount, activeChatId, addMessage]);
 
+  // Keep ref always pointing to latest handleSend (fixes voice stale closure)
+  handleSendRef.current = handleSend;
+
   const handleUpload = (file, mode) => {
     setPendingFile(file);
     setPendingMode(mode);
@@ -1065,7 +1069,30 @@ export default function AnbuHealthAI() {
     inputRef.current?.focus();
   };
 
-  // ── 5. FIXED handleVoice — auto-submits after speech ─────────────────────
+  // Handle special modes that don't need file upload
+  const handlePlusMenuClick = (mode) => {
+    setShowPlusMenu(false);
+    if (mode === "interaction") {
+      const drug1 = window.prompt("First medicine name (e.g. Paracetamol):");
+      if (!drug1) return;
+      const drug2 = window.prompt("Second medicine name (e.g. Ibuprofen):");
+      if (!drug2) return;
+      const question = `${drug1} and ${drug2} together safe? drug interaction check பண்ணு`;
+      setInputText(question);
+      setTimeout(() => handleSendRef.current(question), 100);
+    } else if (mode === "expiry") {
+      const dateStr = window.prompt("Enter expiry date from medicine pack (e.g. Jul 2025 or 07/2025):");
+      if (!dateStr) return;
+      const question = `Expiry date ${dateStr} — is this medicine expired or safe to use?`;
+      setInputText(question);
+      setTimeout(() => handleSendRef.current(question), 100);
+    } else {
+      setUploadMode(mode);
+      setShowUploadModal(true);
+    }
+  };
+
+  // ── 5. FIXED handleVoice — uses ref to avoid stale closure ──────────────────
   const handleVoice = () => {
     if (!recognitionRef.current) { alert("Voice not supported in this browser"); return; }
     if (isListening) {
@@ -1076,8 +1103,8 @@ export default function AnbuHealthAI() {
         const transcript = e.results[0][0].transcript;
         setInputText(transcript);
         setIsListening(false);
-        // Auto-submit after 800ms so user can see what was captured
-        setTimeout(() => handleSend(transcript), 800);
+        // Use ref so we always call the latest handleSend with current state
+        setTimeout(() => handleSendRef.current(transcript), 300);
       };
       recognitionRef.current.start();
       setIsListening(true);
@@ -1092,9 +1119,11 @@ export default function AnbuHealthAI() {
   };
 
   const plusMenuItems = [
-    { icon: <LabIcon />,  label: "Lab Report",   sublabel: "Blood test, sugar, urine",  color: "#60a5fa", mode: "lab" },
-    { icon: <ScanIcon />, label: "X-Ray / Scan",  sublabel: "Chest, abdomen, MRI",       color: "#a78bfa", mode: "scan" },
-    { icon: <PillIcon />, label: "Medicine",      sublabel: "Photo of medicine strip",   color: "#34d399", mode: "medicine" },
+    { icon: <LabIcon />,  label: "Lab Report",        sublabel: "Blood test, sugar, urine",    color: "#60a5fa", mode: "lab" },
+    { icon: <ScanIcon />, label: "X-Ray / Scan",       sublabel: "Chest, abdomen, MRI",          color: "#a78bfa", mode: "scan" },
+    { icon: <PillIcon />, label: "Medicine",           sublabel: "Photo of medicine strip",       color: "#34d399", mode: "medicine" },
+    { icon: "💊", label: "Drug Interaction",  sublabel: "Check 2 medicines together",   color: "#fb923c", mode: "interaction" },
+    { icon: "📅", label: "Expiry Check",      sublabel: "Is this medicine expired?",     color: "#f87171", mode: "expiry" },
   ];
 
   return (
@@ -1192,7 +1221,7 @@ export default function AnbuHealthAI() {
             {showPlusMenu && (
               <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: 0, background: "#1a1f2e", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: 8, minWidth: 220, zIndex: 30, animation: "slideUp 0.2s ease", boxShadow: "0 16px 48px rgba(0,0,0,0.5)" }}>
                 {plusMenuItems.map(item => (
-                  <button key={item.mode} onClick={() => { setUploadMode(item.mode); setShowUploadModal(true); setShowPlusMenu(false); }}
+                  <button key={item.mode} onClick={() => handlePlusMenuClick(item.mode)}
                     style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "none", background: "none", color: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit", transition: "background 0.15s" }}
                     onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
                     onMouseLeave={e => e.currentTarget.style.background = "none"}
