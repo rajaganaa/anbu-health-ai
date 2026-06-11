@@ -97,11 +97,18 @@ async function callAnbuAPI(message, uploadedFile, mode) {
   }
 
   const data = await response.json();
-  const answer = data.final_answer || data.buddhi?.draft_answer || "பதில் கிடைக்கவில்லை. மீண்டும் try பண்ணுங்க.";
+  // final_answer lives at data.final_answer (= sakshi.final_answer) or buddhi.draft_answer
+  const answer =
+    data.final_answer ||
+    data.sakshi?.final_answer ||
+    data.buddhi?.draft_answer ||
+    "பதில் கிடைக்கவில்லை. மீண்டும் try பண்ணுங்க.";
+  // structured card data is always at data.buddhi.structured_response
+  const structured = data.buddhi?.structured_response || null;
   return {
     mode: data.mode,
     answer: answer,
-    structured: data.buddhi?.structured_response,
+    structured: structured,
   };
 }
 
@@ -122,214 +129,466 @@ function incrementPrompt() {
   return updated.count;
 }
 
-// ── 1. IMPROVED StructuredLabResult ───────────────────────────────────────────
-function StructuredLabResult({ data }) {
-  if (!data) return null;
-  const urgency = data.urgency || "low";
-  const urgencyConfig = {
-    low:    { color: "#10b981", bg: "rgba(16,185,129,0.08)",  border: "rgba(16,185,129,0.2)",  label: "✅ Normal",    icon: "🟢" },
-    medium: { color: "#f59e0b", bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.2)",  label: "⚠️ Attention", icon: "🟡" },
-    high:   { color: "#ef4444", bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.2)",   label: "🚨 Urgent",   icon: "🔴" },
-  }[urgency] || { color: "#10b981", bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.2)", label: "Normal", icon: "🟢" };
+// ── SHARED CARD STYLES ─────────────────────────────────────────────────────────
+const C = {
+  card: { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 12, padding: "12px 14px", marginBottom: 10 },
+  cardDanger: { background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.22)", borderRadius: 12, padding: "12px 14px", marginBottom: 10 },
+  cardWarn: { background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: 12, padding: "12px 14px", marginBottom: 10 },
+  sectionLabel: { fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 },
+  row: { display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 0", borderBottom: "1px solid rgba(255,255,255,0.05)", fontSize: 13 },
+  rowLabel: { color: "rgba(255,255,255,0.4)", minWidth: 130, flexShrink: 0, fontSize: 12 },
+  rowValue: { color: "rgba(255,255,255,0.88)", fontWeight: 500, flex: 1 },
+  pill: (color) => ({ display: "inline-block", fontSize: 12, padding: "3px 10px", borderRadius: 20, fontWeight: 500, background: color + "1a", border: `1px solid ${color}44`, color: color }),
+};
+const pillBlue  = C.pill("#60a5fa");
+const pillGreen = C.pill("#34d399");
+const pillRed   = C.pill("#f87171");
+const pillAmber = C.pill("#fbbf24");
+const pillGray  = C.pill("rgba(255,255,255,0.5)");
 
-  const findings = data.findings || [];
-  const recommendation = data.recommendation || data.summary || "";
-
+function SectionLabel({ children }) {
+  return <div style={C.sectionLabel}>{children}</div>;
+}
+function Card({ children, style }) {
+  return <div style={{ ...C.card, ...style }}>{children}</div>;
+}
+function RowItem({ label, value, style }) {
   return (
-    <div style={{ marginTop: 14 }}>
-      {/* Status badge */}
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: urgencyConfig.bg, border: `1px solid ${urgencyConfig.border}`, borderRadius: 20, padding: "4px 12px", marginBottom: 12 }}>
-        <span style={{ fontSize: 12 }}>{urgencyConfig.icon}</span>
-        <span style={{ fontSize: 11, color: urgencyConfig.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8 }}>
-          {urgencyConfig.label} • Lab Report
-        </span>
-      </div>
-
-      {/* Findings grid */}
-      {findings.length > 0 && (
-        <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.07)", overflow: "hidden", marginBottom: 10 }}>
-          <div style={{ padding: "8px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 12 }}>🧪</span>
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>Test Results</span>
-          </div>
-          {findings.map((f, i) => {
-            const isAbnormal = f.includes("High") || f.includes("Low") || f.includes("HIGH") || f.includes("LOW") || f.includes("↑") || f.includes("↓");
-            return (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: i < findings.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none", background: isAbnormal ? "rgba(245,158,11,0.04)" : "none" }}>
-                <span style={{ fontSize: 14, flexShrink: 0 }}>{isAbnormal ? "⚠️" : "✅"}</span>
-                <span style={{ fontSize: 13, color: isAbnormal ? "#fbbf24" : "rgba(255,255,255,0.78)", lineHeight: 1.4, flex: 1 }}>{f}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Recommendation */}
-      {recommendation && (
-        <div style={{ display: "flex", gap: 10, background: "rgba(16,185,129,0.07)", border: "1px solid rgba(16,185,129,0.18)", borderRadius: 10, padding: "10px 14px" }}>
-          <span style={{ fontSize: 16, flexShrink: 0 }}>💡</span>
-          <div>
-            <div style={{ fontSize: 11, color: "#10b981", fontWeight: 600, marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.7 }}>Doctor-கிட்ட சொல்லுங்க</div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.72)", lineHeight: 1.55 }}>{recommendation}</div>
-          </div>
-        </div>
-      )}
-
-      {/* Disclaimer */}
-      {data.disclaimer && (
-        <p style={{ margin: "10px 0 0", fontSize: 11, color: "rgba(255,255,255,0.35)", borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 8 }}>
-          {data.disclaimer}
-        </p>
-      )}
+    <div style={{ ...C.row, ...style }}>
+      <span style={C.rowLabel}>{label}</span>
+      <span style={C.rowValue}>{value}</span>
     </div>
   );
 }
+function FollowUpButtons({ prompts, onSend }) {
+  if (!prompts || prompts.length === 0) return null;
+  return (
+    <Card>
+      <SectionLabel>💬 இதை கேளுங்க</SectionLabel>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {prompts.map((p, i) => (
+          <button key={i} onClick={() => onSend && onSend(p)} style={{ fontSize: 12, padding: "5px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.65)", cursor: "pointer", fontFamily: "inherit" }}>
+            {p} ↗
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
+}
 
-// ── 2. NEW StructuredScanResult ────────────────────────────────────────────────
-function StructuredScanResult({ data }) {
+// ── 1. StructuredLabResult — 6-block format ────────────────────────────────────
+function StructuredLabResult({ data, onFollowUp }) {
+  const [lang, setLang] = useState("en");
   if (!data) return null;
-  const urgency = data.urgency || "low";
-  const urgencyConfig = {
-    low:    { color: "#10b981", bg: "rgba(16,185,129,0.08)",  border: "rgba(16,185,129,0.2)",  label: "✅ Clear",    icon: "🟢" },
-    medium: { color: "#f59e0b", bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.2)",  label: "⚠️ Attention", icon: "🟡" },
-    high:   { color: "#ef4444", bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.2)",   label: "🚨 Urgent",   icon: "🔴" },
-  }[urgency] || { color: "#10b981", bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.2)", label: "Clear", icon: "🟢" };
 
-  const findings = data.findings || [];
-  const recommendation = data.recommendation || data.summary || "";
+  const urgency = data.urgency || "low";
+  const urgencyMap = {
+    low:    { color: "#34d399", bg: "rgba(52,211,153,0.1)",  border: "rgba(52,211,153,0.3)",  label: "✅ All Normal" },
+    medium: { color: "#fbbf24", bg: "rgba(251,191,36,0.1)",  border: "rgba(251,191,36,0.3)",  label: "⚠️ Some Abnormal" },
+    high:   { color: "#f87171", bg: "rgba(248,113,113,0.1)", border: "rgba(248,113,113,0.3)", label: "🚨 Urgent Review" },
+  };
+  const uc = urgencyMap[urgency] || urgencyMap.low;
+
+  const findings    = data.findings || [];
+  const abnormal    = data.abnormal_findings || findings.filter(f => /HIGH|LOW|↑|↓/i.test(f));
+  const normal      = data.normal_findings  || findings.filter(f => !/HIGH|LOW|↑|↓/i.test(f));
+  const summary     = data.summary || "";
+  const rec         = data.recommendation || "";
+  const disclaimer  = data.disclaimer || "";
+
+  // Group all findings by category prefix (e.g. "Glucose: ..." → Blood Sugar)
+  const catMap = { "Glucose": "🩸 Blood Sugar", "HbA1c": "🩸 Blood Sugar", "Cholesterol": "❤️ Lipid", "HDL": "❤️ Lipid", "LDL": "❤️ Lipid", "Triglyceride": "❤️ Lipid", "Haemoglobin": "🫀 Blood Count", "WBC": "🫀 Blood Count", "RBC": "🫀 Blood Count", "Platelet": "🫀 Blood Count", "Creatinine": "🫘 Kidney", "Urea": "🫘 Kidney", "SGOT": "🫁 Liver", "SGPT": "🫁 Liver", "Bilirubin": "🫁 Liver" };
+  function getCategory(str) {
+    for (const [k, v] of Object.entries(catMap)) { if (str.toLowerCase().includes(k.toLowerCase())) return v; }
+    return "🔬 Other Tests";
+  }
+  const grouped = {};
+  findings.forEach(f => { const cat = getCategory(f); if (!grouped[cat]) grouped[cat] = []; grouped[cat].push(f); });
+
+  // Follow-up prompts derived from abnormal findings
+  const followUpPrompts = [];
+  if (abnormal.length > 0) followUpPrompts.push("இந்த results என்ன mean?");
+  if (/HDL|LDL|Cholesterol/i.test(findings.join(" "))) followUpPrompts.push("Cholesterol கம்மி பண்ண diet என்ன?");
+  if (/Glucose|HbA1c/i.test(findings.join(" "))) followUpPrompts.push("Diabetes control பண்றது எப்படி?");
+  followUpPrompts.push("Doctor கிட்ட என்ன சொல்லணும்?");
 
   return (
     <div style={{ marginTop: 14 }}>
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: urgencyConfig.bg, border: `1px solid ${urgencyConfig.border}`, borderRadius: 20, padding: "4px 12px", marginBottom: 12 }}>
-        <span style={{ fontSize: 12 }}>{urgencyConfig.icon}</span>
-        <span style={{ fontSize: 11, color: urgencyConfig.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8 }}>
-          {urgencyConfig.label} • Scan / X-Ray
-        </span>
+      {/* Block 1: Urgency badge */}
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: uc.bg, border: `1px solid ${uc.border}`, borderRadius: 20, padding: "4px 12px", marginBottom: 10 }}>
+        <span style={{ fontSize: 11, color: uc.color, fontWeight: 700, letterSpacing: 0.6 }}>{uc.label} — Lab Report</span>
       </div>
 
-      {findings.length > 0 && (
-        <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.07)", overflow: "hidden", marginBottom: 10 }}>
-          <div style={{ padding: "8px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 12 }}>🩻</span>
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>Scan Findings</span>
-          </div>
-          {findings.map((f, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderBottom: i < findings.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
-              <span style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", flexShrink: 0, marginTop: 1 }}>→</span>
-              <span style={{ fontSize: 13, color: "rgba(255,255,255,0.78)", lineHeight: 1.4 }}>{f}</span>
+      {/* Block 2: Summary + counts */}
+      <Card>
+        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+          <button onClick={() => setLang("en")} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 6, border: `1px solid ${lang === "en" ? "#60a5fa44" : "rgba(255,255,255,0.1)"}`, background: lang === "en" ? "rgba(96,165,250,0.12)" : "transparent", color: lang === "en" ? "#60a5fa" : "rgba(255,255,255,0.4)", cursor: "pointer" }}>English</button>
+          <button onClick={() => setLang("ta")} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 6, border: `1px solid ${lang === "ta" ? "#60a5fa44" : "rgba(255,255,255,0.1)"}`, background: lang === "ta" ? "rgba(96,165,250,0.12)" : "transparent", color: lang === "ta" ? "#60a5fa" : "rgba(255,255,255,0.4)", cursor: "pointer" }}>Tamil</button>
+        </div>
+        <p style={{ fontSize: 13, lineHeight: 1.7, color: "rgba(255,255,255,0.82)", margin: "0 0 10px" }}>{summary || "Lab report analysis complete."}</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {abnormal.length > 0 && <span style={{ ...C.pill("#f87171"), display: "inline-flex", alignItems: "center", gap: 4 }}>⚠ {abnormal.length} abnormal</span>}
+          {normal.length > 0   && <span style={{ ...C.pill("#34d399"), display: "inline-flex", alignItems: "center", gap: 4 }}>✓ {normal.length} normal</span>}
+        </div>
+      </Card>
+
+      {/* Block 3: Test results grouped by category */}
+      {Object.keys(grouped).length > 0 && (
+        <Card>
+          <SectionLabel>🧪 Test Results</SectionLabel>
+          {Object.entries(grouped).map(([cat, items]) => (
+            <div key={cat}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.35)", background: "rgba(255,255,255,0.05)", borderRadius: 6, padding: "3px 8px", display: "inline-block", margin: "6px 0 4px" }}>{cat}</div>
+              {items.map((f, i) => {
+                const isHigh   = /HIGH|↑/i.test(f);
+                const isLow    = /LOW|↓/i.test(f);
+                const isAbnorm = isHigh || isLow;
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                    <span style={{ fontSize: 13, flexShrink: 0 }}>{isAbnorm ? "⚠️" : "✅"}</span>
+                    <span style={{ fontSize: 13, flex: 1, color: isHigh ? "#f87171" : isLow ? "#fbbf24" : "rgba(255,255,255,0.75)", lineHeight: 1.45 }}>{f}</span>
+                    {isHigh && <span style={{ ...C.pill("#f87171"), fontSize: 10 }}>HIGH</span>}
+                    {isLow  && <span style={{ ...C.pill("#fbbf24"), fontSize: 10 }}>LOW</span>}
+                    {!isAbnorm && <span style={{ ...C.pill("#34d399"), fontSize: 10 }}>NORMAL</span>}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* Block 4: Attention flags — only if abnormal */}
+      {abnormal.length > 0 && (
+        <div style={{ ...C.cardDanger }}>
+          <SectionLabel style={{ color: "#f87171" }}>🚨 Attention — Abnormal Values</SectionLabel>
+          {abnormal.map((f, i) => (
+            <div key={i} style={{ display: "flex", gap: 10, padding: "6px 0", borderBottom: i < abnormal.length - 1 ? "1px solid rgba(239,68,68,0.1)" : "none" }}>
+              <span style={{ flexShrink: 0 }}>⚠</span>
+              <span style={{ fontSize: 13, color: "#fca5a5", lineHeight: 1.45 }}>{f}</span>
             </div>
           ))}
         </div>
       )}
 
-      {recommendation && (
-        <div style={{ display: "flex", gap: 10, background: "rgba(167,139,250,0.07)", border: "1px solid rgba(167,139,250,0.18)", borderRadius: 10, padding: "10px 14px" }}>
-          <span style={{ fontSize: 16, flexShrink: 0 }}>🏥</span>
-          <div>
-            <div style={{ fontSize: 11, color: "#a78bfa", fontWeight: 600, marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.7 }}>Next Step</div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.72)", lineHeight: 1.55 }}>{recommendation}</div>
-          </div>
-        </div>
+      {/* Block 5: Doctor advice */}
+      {rec && (
+        <Card style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)" }}>
+          <SectionLabel>💡 Doctor Advice</SectionLabel>
+          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.65, margin: 0 }}>{rec}</p>
+        </Card>
       )}
 
-      {data.disclaimer && (
-        <p style={{ margin: "10px 0 0", fontSize: 11, color: "rgba(255,255,255,0.35)", borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 8 }}>
-          {data.disclaimer}
-        </p>
+      {/* Block 6: Follow-up prompts */}
+      <FollowUpButtons prompts={followUpPrompts} onSend={onFollowUp} />
+
+      {disclaimer && (
+        <p style={{ margin: "6px 0 0", fontSize: 11, color: "rgba(255,255,255,0.3)", textAlign: "center" }}>⚕ {disclaimer}</p>
       )}
     </div>
   );
 }
 
-// ── 3. IMPROVED StructuredMedicineResult ──────────────────────────────────────
-function StructuredMedicineResult({ data }) {
+// ── 2. StructuredScanResult — 12-block format ─────────────────────────────────
+function StructuredScanResult({ data, onFollowUp }) {
+  const [lang, setLang] = useState("en");
   if (!data) return null;
-  const uses = data.uses || data.use || [];
-  const sideEffects = data.sideEffects || data.side_effects || [];
-  const warnings = data.warnings || [];
-  const dosage = data.dosage || "";
-  const summary = data.summary || "";
+
+  const urgency     = data.urgency || "low";
+  const urgencyMap  = {
+    low:    { color: "#34d399", bg: "rgba(52,211,153,0.1)",   label: "✅ Routine — No immediate action",   icon: "🟢" },
+    medium: { color: "#fbbf24", bg: "rgba(251,191,36,0.1)",   label: "⚠️ Follow-up needed — 1–2 weeks",    icon: "🟡" },
+    high:   { color: "#f87171", bg: "rgba(248,113,113,0.1)",  label: "🚨 Urgent — consult doctor 24–48 hrs", icon: "🔴" },
+  };
+  const uc       = urgencyMap[urgency] || urgencyMap.low;
+  const findings = data.findings || [];
+  const rec      = data.recommendation || "";
+  const bodyPart = data.body_part || "";
+  const scanType = data.scan_type || "Scan";
+  const implants = data.implants_detected || false;
+  const implantD = data.implant_details || "";
+  const fracture = data.fractures_visible || false;
+  const summary  = data.summary || "";
+  const disclaimer = data.disclaimer || "";
+
+  // Structure checklist items
+  const checklist = [
+    { label: "Bone cortex",      status: fracture ? "Abnormal" : "Normal",    color: fracture ? "#f87171" : "#34d399" },
+    { label: "Implant / hardware", status: implants ? "Detected" : "None",    color: implants ? "#fbbf24" : "#34d399" },
+    { label: "Joint space",      status: "Not clearly evaluable",              color: "rgba(255,255,255,0.4)" },
+    { label: "Soft tissue",      status: "No gross abnormality",               color: "#34d399" },
+  ];
+
+  // What this scan cannot tell
+  const limitations = ["Nerve damage (needs clinical exam)", "Tendon / ligament tears (needs MRI)", "Infection (needs blood tests)", "Pain severity", "Cartilage quality"];
+
+  // Follow-up prompts
+  const followUps = [];
+  if (implants) followUps.push("MRI with metal implants — safe?");
+  if (fracture) followUps.push("Fracture healing எவ்வளவு time?");
+  followUps.push("இந்த scan என்ன சொல்கிறது?");
+  followUps.push("Doctor கிட்ட என்ன கேக்கணும்?");
 
   return (
     <div style={{ marginTop: 14 }}>
-      {/* Header badge */}
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.2)", borderRadius: 20, padding: "4px 12px", marginBottom: 12 }}>
-        <span style={{ fontSize: 12 }}>💊</span>
-        <span style={{ fontSize: 11, color: "#34d399", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8 }}>Medicine Info</span>
+      {/* Block 1: Identity */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(96,165,250,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>🩻</div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.9)" }}>{scanType}{bodyPart ? ` — ${bodyPart}` : ""}</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Medical Imaging Analysis</div>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {[["Scan type", scanType], ["Body part", bodyPart || "—"], ["Fracture visible", fracture ? "Yes" : "No"], ["Implant detected", implants ? "Yes" : "No"]].map(([k, v]) => (
+            <div key={k} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: "6px 10px" }}>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginBottom: 2 }}>{k}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)" }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Block 4: Urgency (most important — shown high) */}
+      <div style={{ background: uc.bg, border: `1px solid ${uc.color}44`, borderRadius: 10, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 18, flexShrink: 0 }}>{uc.icon}</span>
+        <span style={{ fontSize: 13, color: uc.color, fontWeight: 600 }}>{uc.label}</span>
       </div>
 
-      {/* Summary */}
-      {summary && (
-        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", fontStyle: "italic", marginBottom: 10, padding: "0 4px" }}>{summary}</div>
-      )}
-
-      {/* Uses */}
-      {uses.length > 0 && (
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 11, color: "#60a5fa", fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.8, display: "flex", alignItems: "center", gap: 5 }}>
-            <span>✅</span> Uses / பயன்பாடு
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {uses.map((item, i) => (
-              <span key={i} style={{ background: "rgba(96,165,250,0.1)", border: "1px solid rgba(96,165,250,0.25)", borderRadius: 20, padding: "4px 12px", fontSize: 12, color: "rgba(255,255,255,0.8)" }}>{item}</span>
-            ))}
-          </div>
+      {/* Block 3: Summary bilingual */}
+      <Card>
+        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+          <button onClick={() => setLang("en")} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 6, border: `1px solid ${lang === "en" ? "#60a5fa44" : "rgba(255,255,255,0.1)"}`, background: lang === "en" ? "rgba(96,165,250,0.12)" : "transparent", color: lang === "en" ? "#60a5fa" : "rgba(255,255,255,0.4)", cursor: "pointer" }}>English</button>
+          <button onClick={() => setLang("ta")} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 6, border: `1px solid ${lang === "ta" ? "#60a5fa44" : "rgba(255,255,255,0.1)"}`, background: lang === "ta" ? "rgba(96,165,250,0.12)" : "transparent", color: lang === "ta" ? "#60a5fa" : "rgba(255,255,255,0.4)", cursor: "pointer" }}>Tamil</button>
         </div>
-      )}
+        <p style={{ fontSize: 13, lineHeight: 1.7, color: "rgba(255,255,255,0.82)", margin: 0 }}>{summary || "Scan analysis complete."}</p>
+      </Card>
 
-      {/* Dosage */}
-      {dosage && (
-        <div style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.22)", borderRadius: 10, padding: "10px 14px", marginBottom: 10, display: "flex", gap: 10 }}>
-          <span style={{ fontSize: 16, flexShrink: 0 }}>📏</span>
-          <div>
-            <div style={{ fontSize: 11, color: "#818cf8", fontWeight: 600, marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.7 }}>Dosage / அளவு</div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", fontWeight: 500 }}>{dosage}</div>
-          </div>
-        </div>
-      )}
-
-      {/* Side Effects */}
-      {sideEffects.length > 0 && (
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.8, display: "flex", alignItems: "center", gap: 5 }}>
-            <span>⚠️</span> Side Effects / பக்க விளைவுகள்
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {sideEffects.map((item, i) => (
-              <span key={i} style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.22)", borderRadius: 20, padding: "4px 12px", fontSize: 12, color: "rgba(255,255,255,0.75)" }}>{item}</span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Warnings */}
-      {warnings.length > 0 && (
-        <div>
-          <div style={{ fontSize: 11, color: "#ef4444", fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.8, display: "flex", alignItems: "center", gap: 5 }}>
-            <span>🚫</span> Warnings / எச்சரிக்கை
-          </div>
-          <div style={{ background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 10, overflow: "hidden" }}>
-            {warnings.map((item, i) => (
-              <div key={i} style={{ padding: "7px 12px", borderBottom: i < warnings.length - 1 ? "1px solid rgba(239,68,68,0.1)" : "none", fontSize: 12, color: "#fca5a5", display: "flex", gap: 8, alignItems: "flex-start" }}>
-                <span style={{ flexShrink: 0 }}>•</span><span>{item}</span>
+      {/* Block 5: Key findings */}
+      {findings.length > 0 && (
+        <Card>
+          <SectionLabel>🔍 Key Findings</SectionLabel>
+          {findings.map((f, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0", borderBottom: i < findings.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#fbbf24", flexShrink: 0, marginTop: 5 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, color: "rgba(255,255,255,0.82)", lineHeight: 1.5 }}>{f}</div>
               </div>
-            ))}
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* Block 6: Structure checklist */}
+      <Card>
+        <SectionLabel>📋 Structure Checklist</SectionLabel>
+        {checklist.map((item, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < checklist.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+            <span style={{ fontSize: 13, flex: 1, color: "rgba(255,255,255,0.6)" }}>{item.label}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: item.color }}>{item.status}</span>
           </div>
+        ))}
+      </Card>
+
+      {/* Block 7: Implant warning — only if detected */}
+      {implants && (
+        <div style={{ ...C.cardDanger }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: implantD ? 10 : 0 }}>
+            <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
+            <span style={{ fontSize: 13, color: "#fca5a5", fontWeight: 600 }}>Metal implant detected — inform all future doctors, especially before MRI</span>
+          </div>
+          {implantD && (
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", paddingLeft: 24 }}>{implantD}</div>
+          )}
         </div>
       )}
 
-      {/* Disclaimer */}
-      {data.disclaimer && (
-        <p style={{ margin: "10px 0 0", fontSize: 11, color: "rgba(255,255,255,0.35)", borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 8 }}>
-          {data.disclaimer}
-        </p>
+      {/* Block 9: Limitations */}
+      <Card>
+        <SectionLabel>ℹ️ What this scan cannot show</SectionLabel>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {limitations.map((l, i) => <span key={i} style={{ ...C.pill("rgba(255,255,255,0.4)"), fontSize: 11 }}>{l}</span>)}
+        </div>
+        <p style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginTop: 8 }}>CT/X-ray shows bone and hardware only. Soft tissue, nerve, and vascular status require additional tests.</p>
+      </Card>
+
+      {/* Block 10: Next steps */}
+      {rec && (
+        <Card style={{ background: "rgba(167,139,250,0.06)", border: "1px solid rgba(167,139,250,0.22)" }}>
+          <SectionLabel>🏥 Next Steps</SectionLabel>
+          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.65, margin: 0 }}>{rec}</p>
+        </Card>
       )}
+
+      {/* Block 11: Disclaimer */}
+      <div style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.22)", borderRadius: 10, padding: "10px 14px", marginBottom: 10 }}>
+        <div style={{ display: "flex", gap: 8, fontSize: 12, color: "#fbbf24", lineHeight: 1.55 }}>
+          <span style={{ flexShrink: 0 }}>ℹ️</span>
+          <span>This is AI-generated educational guidance only — <strong>not a radiologist's report</strong>. Always get a formal report from a qualified radiologist and consult your doctor for diagnosis and treatment.</span>
+        </div>
+      </div>
+
+      {/* Block 12: Follow-up prompts */}
+      <FollowUpButtons prompts={followUps} onSend={onFollowUp} />
+
+      {disclaimer && <p style={{ margin: "6px 0 0", fontSize: 11, color: "rgba(255,255,255,0.3)", textAlign: "center" }}>⚕ {disclaimer}</p>}
+    </div>
+  );
+}
+
+// ── 3. StructuredMedicineResult — 12-block format ─────────────────────────────
+function StructuredMedicineResult({ data, onFollowUp }) {
+  const [lang, setLang] = useState("en");
+  if (!data) return null;
+
+  const uses         = data.uses || [];
+  const sideEffects  = data.side_effects || data.sideEffects || [];
+  const warnings     = data.warnings || [];
+  const dosage       = data.dosage || "";
+  const summary      = data.summary || "";
+  const drugName     = data.drug_name || "";
+  const drugCat      = data.drug_category || "";
+  const disclaimer   = data.disclaimer || "";
+  const rec          = data.recommendation || "";
+
+  // Split side effects: first half = mild/common, rest = serious
+  const midpoint    = Math.ceil(sideEffects.length / 2);
+  const mildEffects = sideEffects.slice(0, midpoint);
+  const seriousEffects = sideEffects.slice(midpoint);
+
+  // Special populations (derive from warnings text)
+  const populations = [
+    { label: "Pregnancy",      val: warnings.some(w => /pregnan/i.test(w)) ? "Caution" : "Ask doctor", color: "#fbbf24" },
+    { label: "Breastfeeding",  val: "Ask doctor",  color: "#fbbf24" },
+    { label: "Children",       val: "Weight-based", color: "#fbbf24" },
+    { label: "Elderly",        val: "Lower dose",   color: "#fbbf24" },
+    { label: "Liver disease",  val: warnings.some(w => /liver/i.test(w)) ? "Avoid" : "Ask doctor", color: "#f87171" },
+    { label: "Kidney disease", val: "Reduce dose",  color: "#fbbf24" },
+  ];
+
+  // Follow-up prompts
+  const followUps = [
+    drugName ? `${drugName} side effects in Tamil` : "Medicine side effects",
+    "Can I take this during pregnancy?",
+    "What is the maximum daily dose?",
+    dosage ? "Dosage schedule என்ன?" : "Doctor prescription தேவையா?",
+  ];
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      {/* Block 1: Medicine identity */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: drugName ? 10 : 0 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(52,211,153,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>💊</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.9)" }}>{drugName || "Medicine"}</div>
+            {drugCat && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{drugCat}</div>}
+          </div>
+          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.3)", color: "#f87171", fontWeight: 700 }}>Rx</span>
+        </div>
+        {dosage && (
+          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: "8px 10px" }}>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginBottom: 2 }}>📏 Dosage</div>
+            <div style={{ fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.85)" }}>{dosage}</div>
+          </div>
+        )}
+      </Card>
+
+      {/* Block 2: Plain language summary */}
+      {summary && (
+        <Card>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+            <button onClick={() => setLang("en")} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 6, border: `1px solid ${lang === "en" ? "#60a5fa44" : "rgba(255,255,255,0.1)"}`, background: lang === "en" ? "rgba(96,165,250,0.12)" : "transparent", color: lang === "en" ? "#60a5fa" : "rgba(255,255,255,0.4)", cursor: "pointer" }}>English</button>
+            <button onClick={() => setLang("ta")} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 6, border: `1px solid ${lang === "ta" ? "#60a5fa44" : "rgba(255,255,255,0.1)"}`, background: lang === "ta" ? "rgba(96,165,250,0.12)" : "transparent", color: lang === "ta" ? "#60a5fa" : "rgba(255,255,255,0.4)", cursor: "pointer" }}>Tamil</button>
+          </div>
+          <p style={{ fontSize: 13, lineHeight: 1.7, color: "rgba(255,255,255,0.82)", margin: 0 }}>{summary}</p>
+        </Card>
+      )}
+
+      {/* Block 3: Uses */}
+      {uses.length > 0 && (
+        <Card>
+          <SectionLabel>✅ Uses / பயன்பாடு</SectionLabel>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {uses.map((u, i) => <span key={i} style={{ ...C.pill("#60a5fa") }}>{u}</span>)}
+          </div>
+        </Card>
+      )}
+
+      {/* Block 5: Side effects — split mild / serious */}
+      {sideEffects.length > 0 && (
+        <Card>
+          <SectionLabel>⚠️ Side Effects / பக்க விளைவுகள்</SectionLabel>
+          {mildEffects.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 6 }}>Common — may not need attention</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                {mildEffects.map((e, i) => <span key={i} style={{ ...C.pill("#fbbf24") }}>{e}</span>)}
+              </div>
+            </>
+          )}
+          {seriousEffects.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 6 }}>Serious — stop and see doctor</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {seriousEffects.map((e, i) => <span key={i} style={{ ...C.pill("#f87171") }}>{e}</span>)}
+              </div>
+            </>
+          )}
+        </Card>
+      )}
+
+      {/* Block 6: Warnings — red border */}
+      {warnings.length > 0 && (
+        <div style={{ ...C.cardDanger }}>
+          <SectionLabel style={{ color: "#f87171" }}>🚫 Warnings / எச்சரிக்கை</SectionLabel>
+          {warnings.map((w, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, padding: "5px 0", borderBottom: i < warnings.length - 1 ? "1px solid rgba(239,68,68,0.1)" : "none", fontSize: 12, color: "#fca5a5" }}>
+              <span style={{ flexShrink: 0 }}>⚠</span><span>{w}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Block 8: Special populations */}
+      <Card>
+        <SectionLabel>👥 Safety — Special Groups</SectionLabel>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
+          {populations.map((p, i) => (
+            <div key={i} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: "7px 10px" }}>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginBottom: 3 }}>{p.label}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: p.color }}>{p.val}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Block 10: Missed dose / overdose */}
+      <Card style={{ background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.18)" }}>
+        <SectionLabel>🕐 Missed Dose / Overdose</SectionLabel>
+        <div style={{ fontSize: 12, color: "#fbbf24", marginBottom: 6 }}><strong>Missed:</strong> Take as soon as remembered. If next dose is near, skip — do not double up.</div>
+        <div style={{ fontSize: 12, color: "#f87171" }}><strong>Overdose:</strong> Seek emergency care immediately. Do not wait for symptoms.</div>
+      </Card>
+
+      {/* Doctor advice */}
+      {rec && (
+        <Card style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)" }}>
+          <SectionLabel>💡 Doctor Advice</SectionLabel>
+          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.65, margin: 0 }}>{rec}</p>
+        </Card>
+      )}
+
+      {/* Block 12: Follow-up prompts */}
+      <FollowUpButtons prompts={followUps} onSend={onFollowUp} />
+
+      {disclaimer && <p style={{ margin: "6px 0 0", fontSize: 11, color: "rgba(255,255,255,0.3)", textAlign: "center" }}>⚕ {disclaimer}</p>}
     </div>
   );
 }
 
 // ── MessageBubble ──────────────────────────────────────────────────────────────
-function MessageBubble({ msg, isLast }) {
+function MessageBubble({ msg, isLast, onFollowUp }) {
   const isUser = msg.role === "user";
   const [audioPlaying, setAudioPlaying] = useState(false);
 
@@ -401,11 +660,11 @@ function MessageBubble({ msg, isLast }) {
           {/* ── Structured result cards (fixed routing) ── */}
           {hasLabOrScan && !hasMedicine && (
             isScan
-              ? <StructuredScanResult data={msg.structured} />
-              : <StructuredLabResult data={msg.structured} />
+              ? <StructuredScanResult data={msg.structured} onFollowUp={onFollowUp} />
+              : <StructuredLabResult data={msg.structured} onFollowUp={onFollowUp} />
           )}
           {hasMedicine && (
-            <StructuredMedicineResult data={msg.structured} />
+            <StructuredMedicineResult data={msg.structured} onFollowUp={onFollowUp} />
           )}
         </div>
 
@@ -888,7 +1147,7 @@ export default function AnbuHealthAI() {
           ) : (
             <>
               {messages.map((msg, i) => (
-                <MessageBubble key={msg.id} msg={msg} isLast={i === messages.length - 1} />
+                <MessageBubble key={msg.id} msg={msg} isLast={i === messages.length - 1} onFollowUp={(text) => { setInputText(text); setTimeout(() => handleSend(text), 100); }} />
               ))}
               {isLoading && <TypingIndicator />}
             </>
