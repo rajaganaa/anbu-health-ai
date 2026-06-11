@@ -176,413 +176,480 @@ function FollowUpButtons({ prompts, onSend }) {
   );
 }
 
-// ── 1. StructuredLabResult — 6-block format ────────────────────────────────────
+// ── 1. StructuredLabResult — matches client-approved lab template ─────────────
 function StructuredLabResult({ data, onFollowUp }) {
   const [lang, setLang] = useState("en");
   if (!data) return null;
-
   const urgency = data.urgency || "low";
   const urgencyMap = {
-    low:    { color: "#34d399", bg: "rgba(52,211,153,0.1)",  border: "rgba(52,211,153,0.3)",  label: "✅ All Normal" },
-    medium: { color: "#fbbf24", bg: "rgba(251,191,36,0.1)",  border: "rgba(251,191,36,0.3)",  label: "⚠️ Some Abnormal" },
-    high:   { color: "#f87171", bg: "rgba(248,113,113,0.1)", border: "rgba(248,113,113,0.3)", label: "🚨 Urgent Review" },
+    low:    { color:"#34d399", bg:"rgba(52,211,153,0.08)",  border:"rgba(52,211,153,0.25)",  label:"All Normal" },
+    medium: { color:"#fbbf24", bg:"rgba(251,191,36,0.08)",  border:"rgba(251,191,36,0.25)",  label:"Some Abnormal" },
+    high:   { color:"#f87171", bg:"rgba(248,113,113,0.08)", border:"rgba(248,113,113,0.25)", label:"Urgent Review" },
   };
   const uc = urgencyMap[urgency] || urgencyMap.low;
-
-  const findings    = data.findings || [];
-  const abnormal    = data.abnormal_findings || findings.filter(f => /HIGH|LOW|↑|↓/i.test(f));
-  const normal      = data.normal_findings  || findings.filter(f => !/HIGH|LOW|↑|↓/i.test(f));
-  const summary     = data.summary || "";
-  const rec         = data.recommendation || "";
-  const disclaimer  = data.disclaimer || "";
-
-  // Group all findings by category prefix (e.g. "Glucose: ..." → Blood Sugar)
-  const catMap = { "Glucose": "🩸 Blood Sugar", "HbA1c": "🩸 Blood Sugar", "Cholesterol": "❤️ Lipid", "HDL": "❤️ Lipid", "LDL": "❤️ Lipid", "Triglyceride": "❤️ Lipid", "Haemoglobin": "🫀 Blood Count", "WBC": "🫀 Blood Count", "RBC": "🫀 Blood Count", "Platelet": "🫀 Blood Count", "Creatinine": "🫘 Kidney", "Urea": "🫘 Kidney", "SGOT": "🫁 Liver", "SGPT": "🫁 Liver", "Bilirubin": "🫁 Liver" };
+  const findings   = data.findings || [];
+  const abnormal   = data.abnormal_findings || findings.filter(f => /HIGH|LOW/i.test(f));
+  const normalF    = data.normal_findings  || findings.filter(f => !/HIGH|LOW/i.test(f));
+  const borderline = data.borderline_findings || [];
+  const summary    = data.summary || "Lab report analysis complete.";
+  const summaryTa  = data.summary_tamil || summary;
+  const rec        = data.recommendation || "";
+  const patient    = data.patient_name || "";
+  const age        = data.age || "";
+  const reportDate = data.report_date || "";
+  const labName    = data.lab_name || "";
+  const reportType = data.report_type || "";
+  const disclaimer = data.disclaimer || "This is for educational purposes only. Always consult a qualified doctor.";
+  const catMap = {
+    "Glucose":"Blood Sugar","HbA1c":"Blood Sugar","Sugar":"Blood Sugar",
+    "Cholesterol":"Lipid Profile","HDL":"Lipid Profile","LDL":"Lipid Profile","Triglyceride":"Lipid Profile",
+    "Haemoglobin":"Blood Count","WBC":"Blood Count","RBC":"Blood Count","Platelet":"Blood Count","PCV":"Blood Count",
+    "Creatinine":"Kidney","Urea":"Kidney","Uric":"Kidney",
+    "SGOT":"Liver","SGPT":"Liver","Bilirubin":"Liver","ALT":"Liver","AST":"Liver",
+    "TSH":"Thyroid","T3":"Thyroid","T4":"Thyroid",
+  };
   function getCategory(str) {
-    for (const [k, v] of Object.entries(catMap)) { if (str.toLowerCase().includes(k.toLowerCase())) return v; }
+    const catEmoji = {"Blood Sugar":"🩸","Lipid Profile":"❤️","Blood Count":"🫀","Kidney":"🫘","Liver":"🫁","Thyroid":"🦋"};
+    for (const [k, v] of Object.entries(catMap)) {
+      if (str.toLowerCase().includes(k.toLowerCase())) return (catEmoji[v]||"🔬") + " " + v;
+    }
     return "🔬 Other Tests";
   }
   const grouped = {};
   findings.forEach(f => { const cat = getCategory(f); if (!grouped[cat]) grouped[cat] = []; grouped[cat].push(f); });
-
-  // Follow-up prompts derived from abnormal findings
-  const followUpPrompts = [];
-  if (abnormal.length > 0) followUpPrompts.push("இந்த results என்ன mean?");
-  if (/HDL|LDL|Cholesterol/i.test(findings.join(" "))) followUpPrompts.push("Cholesterol கம்மி பண்ண diet என்ன?");
-  if (/Glucose|HbA1c/i.test(findings.join(" "))) followUpPrompts.push("Diabetes control பண்றது எப்படி?");
-  followUpPrompts.push("Doctor கிட்ட என்ன சொல்லணும்?");
-
+  const S = {
+    sec: { background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.09)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    secD: { background:"rgba(239,68,68,0.05)",border:"0.5px solid rgba(239,68,68,0.22)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    lbl: { fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8,display:"block" },
+    lb: (a) => ({ fontSize:11,padding:"3px 10px",borderRadius:6,border:`0.5px solid ${a?"rgba(96,165,250,0.4)":"rgba(255,255,255,0.15)"}`,background:a?"rgba(96,165,250,0.12)":"transparent",color:a?"#60a5fa":"rgba(255,255,255,0.4)",cursor:"pointer" }),
+    fq: { fontSize:12,padding:"5px 12px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit" },
+  };
+  const followUps = [];
+  if (abnormal.some(f => /Glucose|HbA1c|Sugar/i.test(f))) followUps.push("Diabetes control பண்றது எப்படி?");
+  if (abnormal.some(f => /Cholesterol|HDL|LDL/i.test(f))) followUps.push("Cholesterol கம்மி பண்ண diet என்ன?");
+  if (abnormal.length > 0) followUps.push("இந்த results என்ன mean?");
+  followUps.push("Doctor கிட்ட என்ன சொல்லணும்?");
   return (
-    <div style={{ marginTop: 14 }}>
-      {/* Block 1: Urgency badge */}
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: uc.bg, border: `1px solid ${uc.border}`, borderRadius: 20, padding: "4px 12px", marginBottom: 10 }}>
-        <span style={{ fontSize: 11, color: uc.color, fontWeight: 700, letterSpacing: 0.6 }}>{uc.label} — Lab Report</span>
+    <div style={{ marginTop:14 }}>
+      {(patient||reportDate||labName) && (
+        <div style={S.sec}>
+          <span style={S.lbl}>Patient Info</span>
+          <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8 }}>
+            {[["Name",patient],["Age / Gender",age],["Report Date",reportDate],["Lab",labName],["Report Type",reportType]].filter(([,v])=>v).map(([k,v])=>(
+              <div key={k} style={{ background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"7px 10px" }}>
+                <div style={{ fontSize:11,color:"rgba(255,255,255,0.35)",marginBottom:2 }}>{k}</div>
+                <div style={{ fontSize:13,fontWeight:500,color:"rgba(255,255,255,0.85)" }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div style={S.sec}>
+        <div style={{ display:"flex",gap:6,marginBottom:10 }}>
+          <button onClick={()=>setLang("en")} style={S.lb(lang==="en")}>English</button>
+          <button onClick={()=>setLang("ta")} style={S.lb(lang==="ta")}>Tamil</button>
+        </div>
+        <p style={{ fontSize:14,lineHeight:1.7,color:"rgba(255,255,255,0.85)",margin:"0 0 10px" }}>{lang==="ta"?summaryTa:summary}</p>
+        <div style={{ display:"flex",flexWrap:"wrap",gap:8 }}>
+          {abnormal.length>0&&<span style={{ display:"inline-flex",alignItems:"center",gap:5,padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:500,background:"rgba(248,113,113,0.1)",color:"#f87171" }}>⚠ {abnormal.length} abnormal</span>}
+          {normalF.length>0&&<span style={{ display:"inline-flex",alignItems:"center",gap:5,padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:500,background:"rgba(52,211,153,0.1)",color:"#34d399" }}>✓ {normalF.length} normal</span>}
+          {borderline.length>0&&<span style={{ display:"inline-flex",alignItems:"center",gap:5,padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:500,background:"rgba(251,191,36,0.1)",color:"#fbbf24" }}>◉ {borderline.length} borderline</span>}
+        </div>
       </div>
-
-      {/* Block 2: Summary + counts */}
-      <Card>
-        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-          <button onClick={() => setLang("en")} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 6, border: `1px solid ${lang === "en" ? "#60a5fa44" : "rgba(255,255,255,0.1)"}`, background: lang === "en" ? "rgba(96,165,250,0.12)" : "transparent", color: lang === "en" ? "#60a5fa" : "rgba(255,255,255,0.4)", cursor: "pointer" }}>English</button>
-          <button onClick={() => setLang("ta")} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 6, border: `1px solid ${lang === "ta" ? "#60a5fa44" : "rgba(255,255,255,0.1)"}`, background: lang === "ta" ? "rgba(96,165,250,0.12)" : "transparent", color: lang === "ta" ? "#60a5fa" : "rgba(255,255,255,0.4)", cursor: "pointer" }}>Tamil</button>
-        </div>
-        <p style={{ fontSize: 13, lineHeight: 1.7, color: "rgba(255,255,255,0.82)", margin: "0 0 10px" }}>{summary || "Lab report analysis complete."}</p>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {abnormal.length > 0 && <span style={{ ...C.pill("#f87171"), display: "inline-flex", alignItems: "center", gap: 4 }}>⚠ {abnormal.length} abnormal</span>}
-          {normal.length > 0   && <span style={{ ...C.pill("#34d399"), display: "inline-flex", alignItems: "center", gap: 4 }}>✓ {normal.length} normal</span>}
-        </div>
-      </Card>
-
-      {/* Block 3: Test results grouped by category */}
-      {Object.keys(grouped).length > 0 && (
-        <Card>
-          <SectionLabel>🧪 Test Results</SectionLabel>
-          {Object.entries(grouped).map(([cat, items]) => (
+      {Object.keys(grouped).length>0&&(
+        <div style={S.sec}>
+          <span style={S.lbl}>Test Results</span>
+          {Object.entries(grouped).map(([cat,items])=>(
             <div key={cat}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.35)", background: "rgba(255,255,255,0.05)", borderRadius: 6, padding: "3px 8px", display: "inline-block", margin: "6px 0 4px" }}>{cat}</div>
-              {items.map((f, i) => {
-                const isHigh   = /HIGH|↑/i.test(f);
-                const isLow    = /LOW|↓/i.test(f);
-                const isAbnorm = isHigh || isLow;
-                return (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                    <span style={{ fontSize: 13, flexShrink: 0 }}>{isAbnorm ? "⚠️" : "✅"}</span>
-                    <span style={{ fontSize: 13, flex: 1, color: isHigh ? "#f87171" : isLow ? "#fbbf24" : "rgba(255,255,255,0.75)", lineHeight: 1.45 }}>{f}</span>
-                    {isHigh && <span style={{ ...C.pill("#f87171"), fontSize: 10 }}>HIGH</span>}
-                    {isLow  && <span style={{ ...C.pill("#fbbf24"), fontSize: 10 }}>LOW</span>}
-                    {!isAbnorm && <span style={{ ...C.pill("#34d399"), fontSize: 10 }}>NORMAL</span>}
+              <span style={{ fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.4)",background:"rgba(255,255,255,0.06)",borderRadius:6,padding:"3px 8px",display:"inline-block",margin:"6px 0 4px" }}>{cat}</span>
+              {items.map((f,i)=>{
+                const isH=/HIGH/i.test(f),isL=/LOW/i.test(f),isB=/BORDER|MONITOR/i.test(f);
+                return(
+                  <div key={i} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 0",borderBottom:"0.5px solid rgba(255,255,255,0.05)",gap:8 }}>
+                    <span style={{ fontSize:13,fontWeight:500,flex:1,color:"rgba(255,255,255,0.85)" }}>{f.replace(/\s*(HIGH|LOW|NORMAL|BORDER|MONITOR).*/i,"").trim()}</span>
+                    <span style={{ fontSize:12,color:"rgba(255,255,255,0.4)",minWidth:80 }}>{(f.match(/[\d.]+\s*(?:mg|g|%|mmol|mEq|IU|cells|mm)[^\s,]*/i)||[""])[0]}</span>
+                    <span>
+                      {isH&&<span style={{ fontSize:11,padding:"2px 7px",borderRadius:20,background:"rgba(248,113,113,0.12)",color:"#f87171",border:"0.5px solid rgba(248,113,113,0.3)" }}>HIGH</span>}
+                      {isL&&<span style={{ fontSize:11,padding:"2px 7px",borderRadius:20,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"0.5px solid rgba(251,191,36,0.3)" }}>LOW</span>}
+                      {isB&&<span style={{ fontSize:11,padding:"2px 7px",borderRadius:20,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"0.5px solid rgba(251,191,36,0.3)" }}>MONITOR</span>}
+                      {!isH&&!isL&&!isB&&<span style={{ fontSize:11,padding:"2px 7px",borderRadius:20,background:"rgba(52,211,153,0.1)",color:"#34d399",border:"0.5px solid rgba(52,211,153,0.25)" }}>NORMAL</span>}
+                    </span>
                   </div>
                 );
               })}
             </div>
           ))}
-        </Card>
+        </div>
       )}
-
-      {/* Block 4: Attention flags — only if abnormal */}
-      {abnormal.length > 0 && (
-        <div style={{ ...C.cardDanger }}>
-          <SectionLabel style={{ color: "#f87171" }}>🚨 Attention — Abnormal Values</SectionLabel>
-          {abnormal.map((f, i) => (
-            <div key={i} style={{ display: "flex", gap: 10, padding: "6px 0", borderBottom: i < abnormal.length - 1 ? "1px solid rgba(239,68,68,0.1)" : "none" }}>
-              <span style={{ flexShrink: 0 }}>⚠</span>
-              <span style={{ fontSize: 13, color: "#fca5a5", lineHeight: 1.45 }}>{f}</span>
+      {abnormal.length>0&&(
+        <div style={S.secD}>
+          <span style={{ ...S.lbl,color:"#f87171" }}>Attention — Abnormal Values</span>
+          {abnormal.map((f,i)=>(
+            <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",padding:"7px 0",borderBottom:i<abnormal.length-1?"0.5px solid rgba(239,68,68,0.1)":"none" }}>
+              <div>
+                <div style={{ fontSize:13,fontWeight:500,color:"#f87171" }}>⚠ {f.replace(/\s*(HIGH|LOW|NORMAL).*/i,"").trim()}</div>
+                <div style={{ fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:2 }}>{/HIGH/i.test(f)?"Above normal range":"Below normal range"} — doctor review needed</div>
+              </div>
+              <span style={{ fontSize:11,padding:"2px 7px",borderRadius:20,flexShrink:0,marginLeft:8,background:/HIGH/i.test(f)?"rgba(248,113,113,0.12)":"rgba(251,191,36,0.12)",color:/HIGH/i.test(f)?"#f87171":"#fbbf24",border:`0.5px solid ${/HIGH/i.test(f)?"rgba(248,113,113,0.3)":"rgba(251,191,36,0.3)"}` }}>{/HIGH/i.test(f)?"Critical":"Attention"}</span>
             </div>
           ))}
         </div>
       )}
-
-      {/* Block 5: Doctor advice */}
-      {rec && (
-        <Card style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)" }}>
-          <SectionLabel>💡 Doctor Advice</SectionLabel>
-          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.65, margin: 0 }}>{rec}</p>
-        </Card>
+      {rec&&(
+        <div style={S.sec}>
+          <span style={S.lbl}>Doctor Advice</span>
+          {rec.split(/[.;]/).filter(Boolean).map((item,i,arr)=>(
+            <div key={i} style={{ display:"flex",alignItems:"flex-start",gap:8,padding:"5px 0",fontSize:13,color:"rgba(255,255,255,0.8)",borderBottom:i<arr.length-1?"0.5px solid rgba(255,255,255,0.05)":"none" }}>
+              <span style={{ flexShrink:0 }}>💡</span><span style={{ lineHeight:1.55 }}>{item.trim()}</span>
+            </div>
+          ))}
+        </div>
       )}
-
-      {/* Block 6: Follow-up prompts */}
-      <FollowUpButtons prompts={followUpPrompts} onSend={onFollowUp} />
-
-      {disclaimer && (
-        <p style={{ margin: "6px 0 0", fontSize: 11, color: "rgba(255,255,255,0.3)", textAlign: "center" }}>⚕ {disclaimer}</p>
-      )}
+      <div style={S.sec}>
+        <span style={S.lbl}>💬 இதை கேளுங்க</span>
+        <div style={{ display:"flex",flexWrap:"wrap",gap:8 }}>
+          {followUps.map((p,i)=><button key={i} onClick={()=>onFollowUp&&onFollowUp(p)} style={S.fq}>{p} ↗</button>)}
+        </div>
+      </div>
+      <p style={{ fontSize:12,color:"rgba(255,255,255,0.25)",textAlign:"center",paddingTop:4 }}>⚕ {disclaimer}</p>
     </div>
   );
 }
 
-// ── 2. StructuredScanResult — 12-block format ─────────────────────────────────
+// ── 2. StructuredScanResult — matches client-approved scan template ───────────
 function StructuredScanResult({ data, onFollowUp }) {
   const [lang, setLang] = useState("en");
   if (!data) return null;
-
-  const urgency     = data.urgency || "low";
-  const urgencyMap  = {
-    low:    { color: "#34d399", bg: "rgba(52,211,153,0.1)",   label: "✅ Routine — No immediate action",   icon: "🟢" },
-    medium: { color: "#fbbf24", bg: "rgba(251,191,36,0.1)",   label: "⚠️ Follow-up needed — 1–2 weeks",    icon: "🟡" },
-    high:   { color: "#f87171", bg: "rgba(248,113,113,0.1)",  label: "🚨 Urgent — consult doctor 24–48 hrs", icon: "🔴" },
+  const scanType  = data.scan_type  || data.scanType  || "Scan";
+  const bodyPart  = data.body_part  || data.bodyPart  || "";
+  const patient   = data.patient_name || "";
+  const scanDate  = data.scan_date  || data.scanDate  || "";
+  const side      = data.side || "";
+  const findings  = data.findings   || [];
+  const summary   = data.summary    || "Scan analysis complete.";
+  const summaryTa = data.summary_tamil || summary;
+  const rec       = data.recommendation || "";
+  const implants  = data.implants_detected || data.implantDetected || false;
+  const implantD  = data.implant_details  || data.implantDetails  || "";
+  const fracture  = data.fracture_visible || data.fractureVisible || false;
+  const urgency   = data.urgency    || "routine";
+  const limitations = data.limitations || ["Nerve damage (needs clinical exam)","Tendon/ligament tears (needs MRI)","Cartilage quality","Pain severity","Infection (needs blood tests)"];
+  const disclaimer= data.disclaimer || "This analysis is AI-generated for educational guidance only — not a radiologist's report.";
+  const urgencyMap = {
+    emergency:{ color:"#f87171",bg:"rgba(248,113,113,0.1)",icon:"🚨",label:"Emergency — go to hospital now" },
+    urgent:   { color:"#f87171",bg:"rgba(248,113,113,0.08)",icon:"⚠️",label:"Urgent — within 24–48 hrs" },
+    followup: { color:"#fbbf24",bg:"rgba(251,191,36,0.08)",icon:"📋",label:"Follow-up required — consult surgeon" },
+    routine:  { color:"#34d399",bg:"rgba(52,211,153,0.08)",icon:"✅",label:"Routine review — no immediate action" },
+    normal:   { color:"#34d399",bg:"rgba(52,211,153,0.08)",icon:"✅",label:"No immediate action needed" },
   };
-  const uc       = urgencyMap[urgency] || urgencyMap.low;
-  const findings = data.findings || [];
-  const rec      = data.recommendation || "";
-  const bodyPart = data.body_part || "";
-  const scanType = data.scan_type || "Scan";
-  const implants = data.implants_detected || false;
-  const implantD = data.implant_details || "";
-  const fracture = data.fractures_visible || false;
-  const summary  = data.summary || "";
-  const disclaimer = data.disclaimer || "";
-
-  // Structure checklist items
-  const checklist = [
-    { label: "Bone cortex",      status: fracture ? "Abnormal" : "Normal",    color: fracture ? "#f87171" : "#34d399" },
-    { label: "Implant / hardware", status: implants ? "Detected" : "None",    color: implants ? "#fbbf24" : "#34d399" },
-    { label: "Joint space",      status: "Not clearly evaluable",              color: "rgba(255,255,255,0.4)" },
-    { label: "Soft tissue",      status: "No gross abnormality",               color: "#34d399" },
+  const uc = urgencyMap[urgency] || urgencyMap.routine;
+  const defaultChecklist = [
+    { label:"Bone cortex",       status:fracture?"Disrupted (fracture)":"Normal",ok:!fracture },
+    { label:"Implant / hardware",status:implants?"Detected":"None",             ok:true },
+    { label:"Joint space",       status:"Not clearly evaluable",                ok:null },
+    { label:"Soft tissue",       status:"No gross abnormality",                 ok:true },
+    { label:"Bone density",      status:"Normal",                               ok:true },
   ];
-
-  // What this scan cannot tell
-  const limitations = ["Nerve damage (needs clinical exam)", "Tendon / ligament tears (needs MRI)", "Infection (needs blood tests)", "Pain severity", "Cartilage quality"];
-
-  // Follow-up prompts
+  const S = {
+    card: { background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.09)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    cardD:{ background:"rgba(239,68,68,0.05)",border:"0.5px solid rgba(239,68,68,0.22)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    cardW:{ background:"rgba(245,158,11,0.05)",border:"0.5px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    lbl: { fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8,display:"block" },
+    lb: (a)=>({ fontSize:11,padding:"3px 10px",borderRadius:6,border:`0.5px solid ${a?"rgba(96,165,250,0.4)":"rgba(255,255,255,0.15)"}`,background:a?"rgba(96,165,250,0.12)":"transparent",color:a?"#60a5fa":"rgba(255,255,255,0.4)",cursor:"pointer" }),
+    fq: { fontSize:12,padding:"5px 12px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit" },
+  };
   const followUps = [];
-  if (implants) followUps.push("MRI with metal implants — safe?");
-  if (fracture) followUps.push("Fracture healing எவ்வளவு time?");
+  if (implants) followUps.push("Can I do MRI with metal implant?");
+  if (fracture)  followUps.push("Fracture healing எவ்வளவு time?");
   followUps.push("இந்த scan என்ன சொல்கிறது?");
   followUps.push("Doctor கிட்ட என்ன கேக்கணும்?");
-
   return (
-    <div style={{ marginTop: 14 }}>
-      {/* Block 1: Identity */}
-      <Card>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(96,165,250,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>🩻</div>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.9)" }}>{scanType}{bodyPart ? ` — ${bodyPart}` : ""}</div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Medical Imaging Analysis</div>
+    <div style={{ marginTop:14 }}>
+      <div style={S.card}>
+        <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:12 }}>
+          <div style={{ width:40,height:40,borderRadius:10,background:"rgba(96,165,250,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0 }}>🩻</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:16,fontWeight:500,color:"rgba(255,255,255,0.9)" }}>{scanType}{bodyPart?` — ${bodyPart}`:""}</div>
+            <div style={{ fontSize:12,color:"rgba(255,255,255,0.4)" }}>{side?`${side} side`:"Medical Imaging Analysis"}</div>
           </div>
+          {implants&&<span style={{ fontSize:11,padding:"2px 8px",borderRadius:6,background:"rgba(248,113,113,0.12)",color:"#f87171",border:"0.5px solid rgba(248,113,113,0.3)",flexShrink:0 }}>Post-op</span>}
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          {[["Scan type", scanType], ["Body part", bodyPart || "—"], ["Fracture visible", fracture ? "Yes" : "No"], ["Implant detected", implants ? "Yes" : "No"]].map(([k, v]) => (
-            <div key={k} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: "6px 10px" }}>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginBottom: 2 }}>{k}</div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)" }}>{v}</div>
+        <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8 }}>
+          {[["Scan type",scanType],["Body part",bodyPart||"—"],["Patient",patient||"—"],["Date",scanDate||"—"]].map(([k,v])=>(
+            <div key={k} style={{ background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"7px 10px" }}>
+              <div style={{ fontSize:11,color:"rgba(255,255,255,0.35)",marginBottom:2 }}>{k}</div>
+              <div style={{ fontSize:13,fontWeight:500,color:"rgba(255,255,255,0.85)" }}>{v}</div>
             </div>
           ))}
         </div>
-      </Card>
-
-      {/* Block 4: Urgency (most important — shown high) */}
-      <div style={{ background: uc.bg, border: `1px solid ${uc.color}44`, borderRadius: 10, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 18, flexShrink: 0 }}>{uc.icon}</span>
-        <span style={{ fontSize: 13, color: uc.color, fontWeight: 600 }}>{uc.label}</span>
       </div>
-
-      {/* Block 3: Summary bilingual */}
-      <Card>
-        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-          <button onClick={() => setLang("en")} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 6, border: `1px solid ${lang === "en" ? "#60a5fa44" : "rgba(255,255,255,0.1)"}`, background: lang === "en" ? "rgba(96,165,250,0.12)" : "transparent", color: lang === "en" ? "#60a5fa" : "rgba(255,255,255,0.4)", cursor: "pointer" }}>English</button>
-          <button onClick={() => setLang("ta")} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 6, border: `1px solid ${lang === "ta" ? "#60a5fa44" : "rgba(255,255,255,0.1)"}`, background: lang === "ta" ? "rgba(96,165,250,0.12)" : "transparent", color: lang === "ta" ? "#60a5fa" : "rgba(255,255,255,0.4)", cursor: "pointer" }}>Tamil</button>
+      <div style={S.card}>
+        <span style={S.lbl}>Detected Modality</span>
+        <span style={{ fontSize:12,padding:"3px 10px",borderRadius:20,background:"rgba(96,165,250,0.1)",color:"#60a5fa",border:"0.5px solid rgba(96,165,250,0.25)",fontWeight:500 }}>🔬 {scanType}</span>
+      </div>
+      <div style={S.card}>
+        <div style={{ display:"flex",gap:6,marginBottom:10 }}>
+          <button onClick={()=>setLang("en")} style={S.lb(lang==="en")}>English</button>
+          <button onClick={()=>setLang("ta")} style={S.lb(lang==="ta")}>Tamil</button>
         </div>
-        <p style={{ fontSize: 13, lineHeight: 1.7, color: "rgba(255,255,255,0.82)", margin: 0 }}>{summary || "Scan analysis complete."}</p>
-      </Card>
-
-      {/* Block 5: Key findings */}
-      {findings.length > 0 && (
-        <Card>
-          <SectionLabel>🔍 Key Findings</SectionLabel>
-          {findings.map((f, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0", borderBottom: i < findings.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#fbbf24", flexShrink: 0, marginTop: 5 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, color: "rgba(255,255,255,0.82)", lineHeight: 1.5 }}>{f}</div>
+        <p style={{ fontSize:14,lineHeight:1.7,color:"rgba(255,255,255,0.85)",margin:0 }}>{lang==="ta"?summaryTa:summary}</p>
+      </div>
+      <div style={{ display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,marginBottom:10,background:uc.bg,border:`0.5px solid ${uc.color}33` }}>
+        <span style={{ fontSize:18,flexShrink:0 }}>{uc.icon}</span>
+        <span style={{ fontSize:13,fontWeight:500,color:uc.color }}>{uc.label}</span>
+      </div>
+      {findings.length>0&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Key Findings</span>
+          {findings.map((f,i)=>{
+            const fStr=typeof f==="string"?f:(f.title||"");
+            const isA=/abnormal|fracture|damage|hardware|implant|disrupted/i.test(fStr);
+            const isN=/normal|intact|no abnormality|satisfactory|maintained/i.test(fStr);
+            const dotC=isA?"#f87171":isN?"#34d399":"#fbbf24";
+            return(
+              <div key={i} style={{ display:"flex",alignItems:"flex-start",gap:10,padding:"8px 0",borderBottom:i<findings.length-1?"0.5px solid rgba(255,255,255,0.05)":"none" }}>
+                <div style={{ width:8,height:8,borderRadius:"50%",background:dotC,flexShrink:0,marginTop:5 }}/>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13,color:"rgba(255,255,255,0.82)",lineHeight:1.5,fontWeight:isA?500:400 }}>{fStr}</div>
+                  {typeof f==="object"&&f.detail&&<div style={{ fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:2 }}>{f.detail}</div>}
+                </div>
+                {isA&&<span style={{ fontSize:11,padding:"2px 7px",borderRadius:20,flexShrink:0,background:"rgba(251,191,36,0.1)",color:"#fbbf24",border:"0.5px solid rgba(251,191,36,0.25)" }}>Review</span>}
+                {isN&&!isA&&<span style={{ fontSize:11,padding:"2px 7px",borderRadius:20,flexShrink:0,background:"rgba(52,211,153,0.1)",color:"#34d399",border:"0.5px solid rgba(52,211,153,0.25)" }}>Normal</span>}
               </div>
-            </div>
-          ))}
-        </Card>
+            );
+          })}
+        </div>
       )}
-
-      {/* Block 6: Structure checklist */}
-      <Card>
-        <SectionLabel>📋 Structure Checklist</SectionLabel>
-        {checklist.map((item, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < checklist.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
-            <span style={{ fontSize: 13, flex: 1, color: "rgba(255,255,255,0.6)" }}>{item.label}</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: item.color }}>{item.status}</span>
+      <div style={S.card}>
+        <span style={S.lbl}>Structure Checklist</span>
+        {defaultChecklist.map((item,i)=>(
+          <div key={i} style={{ display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:i<defaultChecklist.length-1?"0.5px solid rgba(255,255,255,0.05)":"none",fontSize:13 }}>
+            <span style={{ flex:1,color:"rgba(255,255,255,0.6)" }}>{item.label}</span>
+            <span style={{ fontWeight:500,color:item.ok===false?"#f87171":item.ok===null?"rgba(255,255,255,0.4)":"#34d399" }}>{item.status}</span>
           </div>
         ))}
-      </Card>
-
-      {/* Block 7: Implant warning — only if detected */}
-      {implants && (
-        <div style={{ ...C.cardDanger }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: implantD ? 10 : 0 }}>
-            <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
-            <span style={{ fontSize: 13, color: "#fca5a5", fontWeight: 600 }}>Metal implant detected — inform all future doctors, especially before MRI</span>
+      </div>
+      {implants&&(
+        <div style={S.cardD}>
+          <div style={{ display:"flex",gap:8,alignItems:"center",marginBottom:implantD?8:0,fontSize:13,color:"#fca5a5",fontWeight:500 }}>
+            <span style={{ flexShrink:0 }}>⚠️</span>
+            Metal implant detected — inform all future doctors, especially before MRI
           </div>
-          {implantD && (
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", paddingLeft: 24 }}>{implantD}</div>
-          )}
+          {implantD&&<div style={{ fontSize:12,color:"rgba(255,255,255,0.5)",paddingLeft:24 }}>{implantD}</div>}
         </div>
       )}
-
-      {/* Block 9: Limitations */}
-      <Card>
-        <SectionLabel>ℹ️ What this scan cannot show</SectionLabel>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {limitations.map((l, i) => <span key={i} style={{ ...C.pill("rgba(255,255,255,0.4)"), fontSize: 11 }}>{l}</span>)}
+      <div style={S.card}>
+        <span style={S.lbl}>What this scan cannot show</span>
+        <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginBottom:8 }}>
+          {limitations.map((l,i)=><span key={i} style={{ fontSize:12,padding:"3px 10px",borderRadius:20,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.4)",border:"0.5px solid rgba(255,255,255,0.1)" }}>{l}</span>)}
         </div>
-        <p style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginTop: 8 }}>CT/X-ray shows bone and hardware only. Soft tissue, nerve, and vascular status require additional tests.</p>
-      </Card>
-
-      {/* Block 10: Next steps */}
-      {rec && (
-        <Card style={{ background: "rgba(167,139,250,0.06)", border: "1px solid rgba(167,139,250,0.22)" }}>
-          <SectionLabel>🏥 Next Steps</SectionLabel>
-          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.65, margin: 0 }}>{rec}</p>
-        </Card>
+        <p style={{ fontSize:12,color:"rgba(255,255,255,0.3)",margin:0 }}>CT/X-ray shows bone and hardware only. Soft tissue, nerve, and vascular status require additional investigation.</p>
+      </div>
+      {rec&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Next Steps</span>
+          {rec.split(/[.;]/).filter(Boolean).map((item,i,arr)=>(
+            <div key={i} style={{ display:"flex",alignItems:"flex-start",gap:8,padding:"5px 0",fontSize:13,color:"rgba(255,255,255,0.8)",borderBottom:i<arr.length-1?"0.5px solid rgba(255,255,255,0.05)":"none" }}>
+              <span style={{ flexShrink:0 }}>→</span><span style={{ lineHeight:1.55 }}>{item.trim()}</span>
+            </div>
+          ))}
+        </div>
       )}
-
-      {/* Block 11: Disclaimer */}
-      <div style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.22)", borderRadius: 10, padding: "10px 14px", marginBottom: 10 }}>
-        <div style={{ display: "flex", gap: 8, fontSize: 12, color: "#fbbf24", lineHeight: 1.55 }}>
-          <span style={{ flexShrink: 0 }}>ℹ️</span>
-          <span>This is AI-generated educational guidance only — <strong>not a radiologist's report</strong>. Always get a formal report from a qualified radiologist and consult your doctor for diagnosis and treatment.</span>
+      <div style={S.cardW}>
+        <div style={{ display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:"#fbbf24" }}>
+          <span style={{ flexShrink:0,marginTop:1 }}>ℹ️</span>
+          <span style={{ lineHeight:1.55 }}>{disclaimer} <strong>Always get a formal radiology report</strong> from a qualified radiologist and consult your doctor.</span>
         </div>
       </div>
-
-      {/* Block 12: Follow-up prompts */}
-      <FollowUpButtons prompts={followUps} onSend={onFollowUp} />
-
-      {disclaimer && <p style={{ margin: "6px 0 0", fontSize: 11, color: "rgba(255,255,255,0.3)", textAlign: "center" }}>⚕ {disclaimer}</p>}
+      <div style={S.card}>
+        <span style={S.lbl}>💬 இதை கேளுங்க</span>
+        <div style={{ display:"flex",flexWrap:"wrap",gap:8 }}>
+          {followUps.map((p,i)=><button key={i} onClick={()=>onFollowUp&&onFollowUp(p)} style={S.fq}>{p} ↗</button>)}
+        </div>
+      </div>
     </div>
   );
 }
 
-// ── 3. StructuredMedicineResult — 12-block format ─────────────────────────────
+// ── 3. StructuredMedicineResult — matches client-approved medicine template ────
 function StructuredMedicineResult({ data, onFollowUp }) {
   const [lang, setLang] = useState("en");
   if (!data) return null;
-
-  const uses         = data.uses || [];
-  const sideEffects  = data.side_effects || data.sideEffects || [];
-  const warnings     = data.warnings || [];
-  const dosage       = data.dosage || "";
-  const summary      = data.summary || "";
-  const drugName     = data.drug_name || "";
-  const drugCat      = data.drug_category || "";
-  const disclaimer   = data.disclaimer || "";
-  const rec          = data.recommendation || "";
-
-  // Split side effects: first half = mild/common, rest = serious
-  const midpoint    = Math.ceil(sideEffects.length / 2);
-  const mildEffects = sideEffects.slice(0, midpoint);
-  const seriousEffects = sideEffects.slice(midpoint);
-
-  // Special populations (derive from warnings text)
+  const drugName    = data.drug_name   || data.drugName   || "";
+  const drugCat     = data.drug_category||data.drugCategory||"";
+  const salt        = data.salt        || drugCat         || "";
+  const manufacturer= data.manufacturer|| "";
+  const mfgDate     = data.mfg_date   || data.mfgDate    || "";
+  const expDate     = data.exp_date   || data.expDate     || "";
+  const mrp         = data.mrp        || "";
+  const uses        = data.uses        || [];
+  const dosage      = data.dosage      || "";
+  const dosageAdult = data.dosage_adult|| "";
+  const dosageChild = data.dosage_child|| "";
+  const whenToTake  = data.when_to_take|| "";
+  const howToTake   = data.how_to_take || "";
+  const duration    = data.duration    || "";
+  const sideEffects = data.side_effects||data.sideEffects ||[];
+  const warnings    = data.warnings    || [];
+  const interactions= data.interactions|| [];
+  const alternatives= data.alternatives|| [];
+  const summary     = data.summary     || "";
+  const summaryTa   = data.summary_tamil||summary;
+  const rec         = data.recommendation||"";
+  const disclaimer  = data.disclaimer  || "Educational information only — always follow your doctor's prescription.";
+  const isRx        = data.is_rx!==undefined?data.is_rx:true;
+  const mid         = Math.ceil(sideEffects.length/2);
+  const mildSE      = sideEffects.slice(0,mid);
+  const seriousSE   = sideEffects.slice(mid);
   const populations = [
-    { label: "Pregnancy",      val: warnings.some(w => /pregnan/i.test(w)) ? "Caution" : "Ask doctor", color: "#fbbf24" },
-    { label: "Breastfeeding",  val: "Ask doctor",  color: "#fbbf24" },
-    { label: "Children",       val: "Weight-based", color: "#fbbf24" },
-    { label: "Elderly",        val: "Lower dose",   color: "#fbbf24" },
-    { label: "Liver disease",  val: warnings.some(w => /liver/i.test(w)) ? "Avoid" : "Ask doctor", color: "#f87171" },
-    { label: "Kidney disease", val: "Reduce dose",  color: "#fbbf24" },
+    { label:"Pregnancy",     val:data.pregnancy    ||"Use with caution",ok:false },
+    { label:"Breastfeeding", val:data.breastfeeding||"Ask doctor",      ok:null  },
+    { label:"Children",      val:data.children     ||"Weight-based",    ok:null  },
+    { label:"Elderly",       val:data.elderly      ||"Lower dose",      ok:null  },
+    { label:"Liver disease", val:warnings.some(w=>/liver/i.test(w))?"Avoid / doctor only":"Ask doctor",ok:false },
+    { label:"Kidney disease",val:data.kidney       ||"Reduce dose",     ok:null  },
   ];
-
-  // Follow-up prompts
+  const S = {
+    card: { background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.09)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    cardD:{ background:"rgba(239,68,68,0.05)",border:"0.5px solid rgba(239,68,68,0.22)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    cardW:{ background:"rgba(245,158,11,0.05)",border:"0.5px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    lbl: { fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8,display:"block" },
+    lb: (a)=>({ fontSize:11,padding:"3px 10px",borderRadius:6,border:`0.5px solid ${a?"rgba(96,165,250,0.4)":"rgba(255,255,255,0.15)"}`,background:a?"rgba(96,165,250,0.12)":"transparent",color:a?"#60a5fa":"rgba(255,255,255,0.4)",cursor:"pointer" }),
+    row: (last)=>({ display:"flex",alignItems:"flex-start",gap:10,padding:"7px 0",borderBottom:last?"none":"0.5px solid rgba(255,255,255,0.05)",fontSize:13 }),
+    rl: { color:"rgba(255,255,255,0.4)",minWidth:130,flexShrink:0 },
+    rv: { color:"rgba(255,255,255,0.85)",fontWeight:500,flex:1 },
+    fq: { fontSize:12,padding:"5px 12px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit" },
+  };
   const followUps = [
-    drugName ? `${drugName} side effects in Tamil` : "Medicine side effects",
-    "Can I take this during pregnancy?",
-    "What is the maximum daily dose?",
-    dosage ? "Dosage schedule என்ன?" : "Doctor prescription தேவையா?",
+    drugName?`Can I take ${drugName} during pregnancy?`:"Safe during pregnancy?",
+    "What is maximum daily dose?",
+    drugName?`${drugName} side effects in Tamil`:"Side effects in Tamil",
+    "Doctor prescription தேவையா?",
   ];
-
   return (
-    <div style={{ marginTop: 14 }}>
-      {/* Block 1: Medicine identity */}
-      <Card>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: drugName ? 10 : 0 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(52,211,153,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>💊</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.9)" }}>{drugName || "Medicine"}</div>
-            {drugCat && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{drugCat}</div>}
+    <div style={{ marginTop:14 }}>
+      <div style={S.card}>
+        <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:12 }}>
+          <div style={{ width:40,height:40,borderRadius:10,background:"rgba(96,165,250,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0 }}>💊</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:16,fontWeight:500,color:"rgba(255,255,255,0.9)" }}>{drugName||"Medicine"}</div>
+            <div style={{ fontSize:12,color:"rgba(255,255,255,0.4)" }}>{salt||drugCat}</div>
           </div>
-          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.3)", color: "#f87171", fontWeight: 700 }}>Rx</span>
+          {isRx&&<span style={{ fontSize:11,padding:"2px 8px",borderRadius:6,background:"rgba(248,113,113,0.12)",color:"#f87171",border:"0.5px solid rgba(248,113,113,0.3)",fontWeight:700,flexShrink:0 }}>Rx</span>}
         </div>
-        {dosage && (
-          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: "8px 10px" }}>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginBottom: 2 }}>📏 Dosage</div>
-            <div style={{ fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.85)" }}>{dosage}</div>
+        {salt        &&<div style={S.row(false)}><span style={S.rl}>Salt / molecule</span><span style={S.rv}>{salt}</span></div>}
+        {manufacturer&&<div style={S.row(false)}><span style={S.rl}>Manufacturer</span><span style={S.rv}>{manufacturer}</span></div>}
+        {drugCat     &&<div style={S.row(false)}><span style={S.rl}>Drug class</span><span style={S.rv}>{drugCat}</span></div>}
+        {(mfgDate||expDate)&&<div style={S.row(false)}><span style={S.rl}>Mfg / Exp</span><span style={S.rv}>{mfgDate&&`Mfg: ${mfgDate}`}{mfgDate&&expDate&&" · "}{expDate&&`Exp: ${expDate}`}</span></div>}
+        {mrp         &&<div style={S.row(true)}><span style={S.rl}>MRP</span><span style={S.rv}>{mrp}</span></div>}
+      </div>
+      {summary&&(
+        <div style={S.card}>
+          <div style={{ display:"flex",gap:6,marginBottom:10 }}>
+            <button onClick={()=>setLang("en")} style={S.lb(lang==="en")}>English</button>
+            <button onClick={()=>setLang("ta")} style={S.lb(lang==="ta")}>Tamil</button>
           </div>
-        )}
-      </Card>
-
-      {/* Block 2: Plain language summary */}
-      {summary && (
-        <Card>
-          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-            <button onClick={() => setLang("en")} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 6, border: `1px solid ${lang === "en" ? "#60a5fa44" : "rgba(255,255,255,0.1)"}`, background: lang === "en" ? "rgba(96,165,250,0.12)" : "transparent", color: lang === "en" ? "#60a5fa" : "rgba(255,255,255,0.4)", cursor: "pointer" }}>English</button>
-            <button onClick={() => setLang("ta")} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 6, border: `1px solid ${lang === "ta" ? "#60a5fa44" : "rgba(255,255,255,0.1)"}`, background: lang === "ta" ? "rgba(96,165,250,0.12)" : "transparent", color: lang === "ta" ? "#60a5fa" : "rgba(255,255,255,0.4)", cursor: "pointer" }}>Tamil</button>
+          <p style={{ fontSize:14,lineHeight:1.7,color:"rgba(255,255,255,0.85)",margin:0 }}>{lang==="ta"?summaryTa:summary}</p>
+        </div>
+      )}
+      {uses.length>0&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Uses / Indications</span>
+          <div style={{ display:"flex",flexWrap:"wrap",gap:6 }}>
+            {uses.map((u,i)=><span key={i} style={{ fontSize:12,padding:"3px 10px",borderRadius:20,background:"rgba(96,165,250,0.1)",color:"#60a5fa",border:"0.5px solid rgba(96,165,250,0.25)",fontWeight:500 }}>{u}</span>)}
           </div>
-          <p style={{ fontSize: 13, lineHeight: 1.7, color: "rgba(255,255,255,0.82)", margin: 0 }}>{summary}</p>
-        </Card>
+        </div>
       )}
-
-      {/* Block 3: Uses */}
-      {uses.length > 0 && (
-        <Card>
-          <SectionLabel>✅ Uses / பயன்பாடு</SectionLabel>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {uses.map((u, i) => <span key={i} style={{ ...C.pill("#60a5fa") }}>{u}</span>)}
-          </div>
-        </Card>
+      <div style={S.card}>
+        <span style={S.lbl}>Dosage & How to Take</span>
+        {dosageAdult&&<div style={S.row(false)}><span style={S.rl}>Adults</span><span style={S.rv}>{dosageAdult}</span></div>}
+        {dosageChild&&<div style={S.row(false)}><span style={S.rl}>Children</span><span style={S.rv}>{dosageChild}</span></div>}
+        {!dosageAdult&&dosage&&<div style={S.row(false)}><span style={S.rl}>Dosage</span><span style={S.rv}>{dosage}</span></div>}
+        {whenToTake &&<div style={S.row(false)}><span style={S.rl}>When to take</span><span style={S.rv}>{whenToTake}</span></div>}
+        {howToTake  &&<div style={S.row(false)}><span style={S.rl}>How to take</span><span style={S.rv}>{howToTake}</span></div>}
+        {duration   &&<div style={S.row(true)}><span style={S.rl}>Duration</span><span style={S.rv}>{duration}</span></div>}
+        {!dosage&&!dosageAdult&&<div style={S.row(true)}><span style={S.rl}>Dosage</span><span style={S.rv}>Doctor prescription follow பண்ணுங்க</span></div>}
+      </div>
+      {sideEffects.length>0&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Side Effects</span>
+          {mildSE.length>0&&<>
+            <div style={{ fontSize:12,color:"rgba(255,255,255,0.35)",marginBottom:6 }}>Common — may not need attention</div>
+            <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginBottom:10 }}>
+              {mildSE.map((e,i)=><span key={i} style={{ fontSize:12,padding:"3px 10px",borderRadius:20,background:"rgba(251,191,36,0.1)",color:"#fbbf24",border:"0.5px solid rgba(251,191,36,0.25)",fontWeight:500 }}>{e}</span>)}
+            </div>
+          </>}
+          {seriousSE.length>0&&<>
+            <div style={{ fontSize:12,color:"rgba(255,255,255,0.35)",marginBottom:6 }}>Serious — stop and consult doctor</div>
+            <div style={{ display:"flex",flexWrap:"wrap",gap:6 }}>
+              {seriousSE.map((e,i)=><span key={i} style={{ fontSize:12,padding:"3px 10px",borderRadius:20,background:"rgba(248,113,113,0.1)",color:"#f87171",border:"0.5px solid rgba(248,113,113,0.25)",fontWeight:500 }}>{e}</span>)}
+            </div>
+          </>}
+        </div>
       )}
-
-      {/* Block 5: Side effects — split mild / serious */}
-      {sideEffects.length > 0 && (
-        <Card>
-          <SectionLabel>⚠️ Side Effects / பக்க விளைவுகள்</SectionLabel>
-          {mildEffects.length > 0 && (
-            <>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 6 }}>Common — may not need attention</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-                {mildEffects.map((e, i) => <span key={i} style={{ ...C.pill("#fbbf24") }}>{e}</span>)}
-              </div>
-            </>
-          )}
-          {seriousEffects.length > 0 && (
-            <>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 6 }}>Serious — stop and see doctor</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {seriousEffects.map((e, i) => <span key={i} style={{ ...C.pill("#f87171") }}>{e}</span>)}
-              </div>
-            </>
-          )}
-        </Card>
-      )}
-
-      {/* Block 6: Warnings — red border */}
-      {warnings.length > 0 && (
-        <div style={{ ...C.cardDanger }}>
-          <SectionLabel style={{ color: "#f87171" }}>🚫 Warnings / எச்சரிக்கை</SectionLabel>
-          {warnings.map((w, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, padding: "5px 0", borderBottom: i < warnings.length - 1 ? "1px solid rgba(239,68,68,0.1)" : "none", fontSize: 12, color: "#fca5a5" }}>
-              <span style={{ flexShrink: 0 }}>⚠</span><span>{w}</span>
+      {warnings.length>0&&(
+        <div style={S.cardD}>
+          <span style={{ ...S.lbl,color:"#f87171" }}>Warnings & Contraindications</span>
+          {warnings.map((w,i)=>(
+            <div key={i} style={{ display:"flex",alignItems:"flex-start",gap:8,padding:"5px 0",borderBottom:i<warnings.length-1?"0.5px solid rgba(239,68,68,0.1)":"none",fontSize:13,color:"#fca5a5" }}>
+              <span style={{ flexShrink:0,marginTop:1 }}>⚠</span><span style={{ lineHeight:1.5 }}>{w}</span>
             </div>
           ))}
         </div>
       )}
-
-      {/* Block 8: Special populations */}
-      <Card>
-        <SectionLabel>👥 Safety — Special Groups</SectionLabel>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
-          {populations.map((p, i) => (
-            <div key={i} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: "7px 10px" }}>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginBottom: 3 }}>{p.label}</div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: p.color }}>{p.val}</div>
+      {interactions.length>0&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Drug Interactions</span>
+          {interactions.map((item,i)=>(
+            <div key={i} style={{ display:"flex",alignItems:"flex-start",gap:8,padding:"5px 0",borderBottom:i<interactions.length-1?"0.5px solid rgba(255,255,255,0.05)":"none",fontSize:13,color:"rgba(255,255,255,0.75)" }}>
+              <span style={{ flexShrink:0,color:"#fbbf24" }}>✕</span>
+              <span style={{ lineHeight:1.5 }}>{typeof item==="string"?item:`${item.drug} — ${item.effect}`}</span>
             </div>
           ))}
         </div>
-      </Card>
-
-      {/* Block 10: Missed dose / overdose */}
-      <Card style={{ background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.18)" }}>
-        <SectionLabel>🕐 Missed Dose / Overdose</SectionLabel>
-        <div style={{ fontSize: 12, color: "#fbbf24", marginBottom: 6 }}><strong>Missed:</strong> Take as soon as remembered. If next dose is near, skip — do not double up.</div>
-        <div style={{ fontSize: 12, color: "#f87171" }}><strong>Overdose:</strong> Seek emergency care immediately. Do not wait for symptoms.</div>
-      </Card>
-
-      {/* Doctor advice */}
-      {rec && (
-        <Card style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)" }}>
-          <SectionLabel>💡 Doctor Advice</SectionLabel>
-          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.65, margin: 0 }}>{rec}</p>
-        </Card>
       )}
-
-      {/* Block 12: Follow-up prompts */}
-      <FollowUpButtons prompts={followUps} onSend={onFollowUp} />
-
-      {disclaimer && <p style={{ margin: "6px 0 0", fontSize: 11, color: "rgba(255,255,255,0.3)", textAlign: "center" }}>⚕ {disclaimer}</p>}
+      <div style={S.card}>
+        <span style={S.lbl}>Safety — Special Groups</span>
+        <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8 }}>
+          {populations.map((p,i)=>(
+            <div key={i} style={{ background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"7px 10px" }}>
+              <div style={{ fontSize:11,color:"rgba(255,255,255,0.35)",marginBottom:3 }}>{p.label}</div>
+              <div style={{ fontSize:12,fontWeight:600,color:p.ok===false?"#fbbf24":p.ok===true?"#34d399":"rgba(255,255,255,0.6)" }}>{p.val}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={S.card}>
+        <span style={S.lbl}>Storage & Handling</span>
+        <div style={S.row(false)}><span style={S.rl}>Store below</span><span style={S.rv}>30°C · Protect from light and moisture</span></div>
+        <div style={S.row(false)}><span style={S.rl}>Children</span><span style={S.rv}>Keep out of reach</span></div>
+        <div style={S.row(true)}><span style={S.rl}>Expired medicine</span><span style={S.rv}>Do not use — dispose safely</span></div>
+      </div>
+      <div style={S.cardW}>
+        <span style={{ ...S.lbl,color:"#fbbf24" }}>Missed Dose / Overdose</span>
+        <div style={{ display:"flex",alignItems:"flex-start",gap:8,padding:"5px 0",fontSize:13,color:"#fbbf24",borderBottom:"0.5px solid rgba(245,158,11,0.1)" }}>
+          <span style={{ flexShrink:0 }}>⏰</span><span><strong>Missed:</strong> Take as soon as remembered. If next dose is near, skip — do not double up.</span>
+        </div>
+        <div style={{ display:"flex",alignItems:"flex-start",gap:8,padding:"5px 0",fontSize:13,color:"#f87171" }}>
+          <span style={{ flexShrink:0 }}>🚨</span><span><strong>Overdose:</strong> Seek emergency care immediately — even without symptoms. Liver damage may appear 1–3 days later.</span>
+        </div>
+      </div>
+      {alternatives.length>0&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Alternatives / Similar Medicines</span>
+          <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginBottom:8 }}>
+            {alternatives.map((a,i)=><span key={i} style={{ fontSize:12,padding:"3px 10px",borderRadius:20,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.5)",border:"0.5px solid rgba(255,255,255,0.1)" }}>{a}</span>)}
+          </div>
+          <p style={{ fontSize:12,color:"rgba(255,255,255,0.3)",margin:0 }}>All contain the same active salt. Brand choice does not affect efficacy.</p>
+        </div>
+      )}
+      <div style={S.card}>
+        <span style={S.lbl}>💬 இதை கேளுங்க</span>
+        <div style={{ display:"flex",flexWrap:"wrap",gap:8 }}>
+          {followUps.map((p,i)=><button key={i} onClick={()=>onFollowUp&&onFollowUp(p)} style={S.fq}>{p} ↗</button>)}
+        </div>
+      </div>
+      <p style={{ fontSize:12,color:"rgba(255,255,255,0.25)",textAlign:"center",paddingTop:4 }}>⚕ {disclaimer}</p>
     </div>
   );
 }
@@ -1069,30 +1136,7 @@ export default function AnbuHealthAI() {
     inputRef.current?.focus();
   };
 
-  // Handle special modes that don't need file upload
-  const handlePlusMenuClick = (mode) => {
-    setShowPlusMenu(false);
-    if (mode === "interaction") {
-      const drug1 = window.prompt("First medicine name (e.g. Paracetamol):");
-      if (!drug1) return;
-      const drug2 = window.prompt("Second medicine name (e.g. Ibuprofen):");
-      if (!drug2) return;
-      const question = `${drug1} and ${drug2} together safe? drug interaction check பண்ணு`;
-      setInputText(question);
-      setTimeout(() => handleSendRef.current(question), 100);
-    } else if (mode === "expiry") {
-      const dateStr = window.prompt("Enter expiry date from medicine pack (e.g. Jul 2025 or 07/2025):");
-      if (!dateStr) return;
-      const question = `Expiry date ${dateStr} — is this medicine expired or safe to use?`;
-      setInputText(question);
-      setTimeout(() => handleSendRef.current(question), 100);
-    } else {
-      setUploadMode(mode);
-      setShowUploadModal(true);
-    }
-  };
-
-  // ── 5. FIXED handleVoice — uses ref to avoid stale closure ──────────────────
+  // ── 5. FIXED handleVoice — auto-submits after speech ─────────────────────
   const handleVoice = () => {
     if (!recognitionRef.current) { alert("Voice not supported in this browser"); return; }
     if (isListening) {
@@ -1103,7 +1147,7 @@ export default function AnbuHealthAI() {
         const transcript = e.results[0][0].transcript;
         setInputText(transcript);
         setIsListening(false);
-        // Use ref so we always call the latest handleSend with current state
+        // Use ref — always calls latest handleSend, avoids stale closure
         setTimeout(() => handleSendRef.current(transcript), 300);
       };
       recognitionRef.current.start();
@@ -1119,11 +1163,9 @@ export default function AnbuHealthAI() {
   };
 
   const plusMenuItems = [
-    { icon: <LabIcon />,  label: "Lab Report",        sublabel: "Blood test, sugar, urine",    color: "#60a5fa", mode: "lab" },
-    { icon: <ScanIcon />, label: "X-Ray / Scan",       sublabel: "Chest, abdomen, MRI",          color: "#a78bfa", mode: "scan" },
-    { icon: <PillIcon />, label: "Medicine",           sublabel: "Photo of medicine strip",       color: "#34d399", mode: "medicine" },
-    { icon: "💊", label: "Drug Interaction",  sublabel: "Check 2 medicines together",   color: "#fb923c", mode: "interaction" },
-    { icon: "📅", label: "Expiry Check",      sublabel: "Is this medicine expired?",     color: "#f87171", mode: "expiry" },
+    { icon: <LabIcon />,  label: "Lab Report",   sublabel: "Blood test, sugar, urine",  color: "#60a5fa", mode: "lab" },
+    { icon: <ScanIcon />, label: "X-Ray / Scan",  sublabel: "Chest, abdomen, MRI",       color: "#a78bfa", mode: "scan" },
+    { icon: <PillIcon />, label: "Medicine",      sublabel: "Photo of medicine strip",   color: "#34d399", mode: "medicine" },
   ];
 
   return (
@@ -1221,7 +1263,7 @@ export default function AnbuHealthAI() {
             {showPlusMenu && (
               <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: 0, background: "#1a1f2e", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: 8, minWidth: 220, zIndex: 30, animation: "slideUp 0.2s ease", boxShadow: "0 16px 48px rgba(0,0,0,0.5)" }}>
                 {plusMenuItems.map(item => (
-                  <button key={item.mode} onClick={() => handlePlusMenuClick(item.mode)}
+                  <button key={item.mode} onClick={() => { setUploadMode(item.mode); setShowUploadModal(true); setShowPlusMenu(false); }}
                     style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "none", background: "none", color: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit", transition: "background 0.15s" }}
                     onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
                     onMouseLeave={e => e.currentTarget.style.background = "none"}
