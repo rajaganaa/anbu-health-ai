@@ -129,19 +129,7 @@ function incrementPrompt() {
   return updated.count;
 }
 
-// ── SHARED CARD STYLES ─────────────────────────────────────────────────────────
-const C = {
-  card: { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 12, padding: "12px 14px", marginBottom: 10 },
-  cardDanger: { background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.22)", borderRadius: 12, padding: "12px 14px", marginBottom: 10 },
-  cardWarn: { background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: 12, padding: "12px 14px", marginBottom: 10 },
-  sectionLabel: { fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 },
-  row: { display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 0", borderBottom: "1px solid rgba(255,255,255,0.05)", fontSize: 13 },
-  rowLabel: { color: "rgba(255,255,255,0.4)", minWidth: 130, flexShrink: 0, fontSize: 12 },
-  rowValue: { color: "rgba(255,255,255,0.88)", fontWeight: 500, flex: 1 },
-  pill: (color) => ({ display: "inline-block", fontSize: 12, padding: "3px 10px", borderRadius: 20, fontWeight: 500, background: color + "1a", border: `1px solid ${color}44`, color: color }),
-};
-
-// SectionLabel, Card, RowItem, FollowUpButtons removed (unused — new cards use inline styles)
+// SectionLabel, Card, RowItem, FollowUpButtons, C removed (unused — new cards use inline styles)
 
 // ── 1. StructuredLabResult — matches client-approved lab template ─────────────
 function StructuredLabResult({ data, onFollowUp }) {
