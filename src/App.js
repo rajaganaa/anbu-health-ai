@@ -141,14 +141,7 @@ const C = {
   pill: (color) => ({ display: "inline-block", fontSize: 12, padding: "3px 10px", borderRadius: 20, fontWeight: 500, background: color + "1a", border: `1px solid ${color}44`, color: color }),
 };
 
-function SectionLabel({ children }) {
-  return <div style={C.sectionLabel}>{children}</div>;
-}
-function Card({ children, style }) {
-  return <div style={{ ...C.card, ...style }}>{children}</div>;
-}
-// RowItem removed (unused)
-// FollowUpButtons removed (unused)
+// SectionLabel, Card, RowItem, FollowUpButtons removed (unused — new cards use inline styles)
 
 // ── 1. StructuredLabResult — matches client-approved lab template ─────────────
 function StructuredLabResult({ data, onFollowUp }) {
