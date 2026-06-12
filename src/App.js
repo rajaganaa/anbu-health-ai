@@ -1023,11 +1023,17 @@ export default function AnbuHealthAI() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
-      rec.lang = "ta-IN";
+      rec.lang = "ta-IN";  // primary language — auto-detects English too
       rec.continuous = false;
       rec.interimResults = false;
       rec.onend = () => setIsListening(false);
-      rec.onerror = () => setIsListening(false);
+      rec.onerror = (e) => {
+        setIsListening(false);
+        if (e.error === "not-allowed") alert("Microphone permission denied. Please allow mic access in browser settings.");
+        else if (e.error === "no-speech") { /* silent — user just didn't speak */ }
+        else if (e.error === "network") alert("Voice recognition needs internet connection.");
+        else console.warn("[Voice] error:", e.error);
+      };
       recognitionRef.current = rec;
     }
   }, []);
@@ -1092,22 +1098,49 @@ export default function AnbuHealthAI() {
     inputRef.current?.focus();
   };
 
-  // ── 5. FIXED handleVoice — auto-submits after speech ─────────────────────
+  // ── 5. handleVoice — multi-language, proper error feedback ──────────────────
   const handleVoice = () => {
-    if (!recognitionRef.current) { alert("Voice not supported in this browser"); return; }
+    if (!recognitionRef.current) {
+      alert("Voice recognition not supported in this browser. Please use Chrome.");
+      return;
+    }
     if (isListening) {
       recognitionRef.current.stop();
       setIsListening(false);
-    } else {
-      recognitionRef.current.onresult = (e) => {
-        const transcript = e.results[0][0].transcript;
-        setInputText(transcript);
-        setIsListening(false);
-        // Use ref — always calls latest handleSend, avoids stale closure
-        setTimeout(() => handleSendRef.current(transcript), 300);
-      };
+      return;
+    }
+    // Detect language from current input or default to Tamil
+    const currentLang = inputText && /[a-zA-Z]/.test(inputText) ? "en-IN" : "ta-IN";
+    recognitionRef.current.lang = currentLang;
+
+    recognitionRef.current.onresult = (e) => {
+      const transcript = e.results[0][0].transcript;
+      if (!transcript.trim()) return;
+      setInputText(transcript);
+      setIsListening(false);
+      setTimeout(() => handleSendRef.current(transcript), 300);
+    };
+
+    recognitionRef.current.onnomatch = () => {
+      setIsListening(false);
+      // Try again with English if Tamil failed
+      if (recognitionRef.current.lang === "ta-IN") {
+        recognitionRef.current.lang = "en-IN";
+        recognitionRef.current.start();
+        setIsListening(true);
+      }
+    };
+
+    try {
       recognitionRef.current.start();
       setIsListening(true);
+    } catch (e) {
+      // Already started — stop and restart
+      recognitionRef.current.stop();
+      setTimeout(() => {
+        recognitionRef.current.start();
+        setIsListening(true);
+      }, 200);
     }
   };
 
