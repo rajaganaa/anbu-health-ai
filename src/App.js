@@ -127,7 +127,7 @@ async function callAnbuAPI(message, uploadedFile, mode, phone, chatId) {
 async function apiSendOtp(phone) {
   const fd = new FormData();
   fd.append("phone", phone);
-  const r = await fetch(`${API_URL}/api/auth/send-otp`, { method: "POST", body: fd });
+  const r = await fetch(`${API_URL}/api/send-otp`, { method: "POST", body: fd });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.detail || "Failed to send OTP");
   return data;
@@ -146,7 +146,7 @@ async function apiVerifyOtp(phone, otp) {
   const fd = new FormData();
   fd.append("phone", phone);
   fd.append("otp", otp);
-  const r = await fetch(`${API_URL}/api/auth/verify-otp`, { method: "POST", body: fd });
+  const r = await fetch(`${API_URL}/api/verify-otp`, { method: "POST", body: fd });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.detail || "Verification failed");
   return data; // { success, phone, user_id, prompts }
@@ -1141,9 +1141,11 @@ export default function AnbuHealthAI() {
     setPendingMode(null);
     setIsLoading(true);
 
-    // Optimistic local increment — overridden by server count if phone is set
-    const localCount = incrementPrompt();
-    if (!phone) setPromptCount(localCount);
+    // Server-side count when logged in; localStorage fallback only without phone
+    if (!phone) {
+      const localCount = incrementPrompt();
+      setPromptCount(localCount);
+    }
 
     try {
       const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId);
