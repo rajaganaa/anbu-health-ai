@@ -1219,6 +1219,11 @@ export default function AnbuHealthAI() {
 
     if (u?.prompts && typeof u.prompts.count === "number") {
       setPromptCount(u.prompts.count);
+    } else {
+      try {
+        const status = await apiUserStatus(u.phone);
+        if (status && typeof status.count === "number") setPromptCount(status.count);
+      } catch { /* localStorage fallback stays */ }
     }
 
     try {
