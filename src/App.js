@@ -80,17 +80,27 @@ const NewChatIcon = () => (
 // ── API ────────────────────────────────────────────────────────────────────────
 const API_URL = "https://anbu-health-ai.kindrock-2ca528ff.centralindia.azurecontainerapps.io";
 
-async function callAnbuAPI(message, uploadedFile, mode) {
+async function callAnbuAPI(message, uploadedFile, mode, phone, chatId) {
   const formData = new FormData();
   formData.append("question", message);
   // Only send mode when there's a file — otherwise always use "general"
   formData.append("mode", (uploadedFile && mode) ? mode : "general");
   if (uploadedFile) formData.append("image", uploadedFile);
+  if (phone) formData.append("phone", phone);
+  if (chatId) formData.append("chat_id", chatId);
 
   const response = await fetch(`${API_URL}/api/analyze`, {
     method: "POST",
     body: formData,
   });
+
+  if (response.status === 429) {
+    const errBody = await response.json().catch(() => ({}));
+    const err = new Error("DAILY_LIMIT");
+    err.prompts = errBody?.detail?.prompts || null;
+    err.message_ta = errBody?.detail?.message;
+    throw err;
+  }
 
   if (!response.ok) {
     throw new Error(`Server error: ${response.status}`);
@@ -109,10 +119,53 @@ async function callAnbuAPI(message, uploadedFile, mode) {
     mode: data.mode,
     answer: answer,
     structured: structured,
+    prompts: data.prompts || null, // server-side {count, remaining, limit, allowed} when phone sent
   };
 }
 
-// ── Prompt counter ─────────────────────────────────────────────────────────────
+// ── Auth API (MSG91 OTP via backend) ────────────────────────────────────────────
+async function apiSendOtp(phone) {
+  const fd = new FormData();
+  fd.append("phone", phone);
+  const r = await fetch(`${API_URL}/api/auth/send-otp`, { method: "POST", body: fd });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || "Failed to send OTP");
+  return data;
+}
+
+async function apiResendOtp(phone) {
+  const fd = new FormData();
+  fd.append("phone", phone);
+  const r = await fetch(`${API_URL}/api/auth/resend-otp`, { method: "POST", body: fd });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || "Failed to resend OTP");
+  return data;
+}
+
+async function apiVerifyOtp(phone, otp) {
+  const fd = new FormData();
+  fd.append("phone", phone);
+  fd.append("otp", otp);
+  const r = await fetch(`${API_URL}/api/auth/verify-otp`, { method: "POST", body: fd });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || "Verification failed");
+  return data; // { success, phone, user_id, prompts }
+}
+
+async function apiUserStatus(phone) {
+  const r = await fetch(`${API_URL}/api/user/status?phone=${encodeURIComponent(phone)}`);
+  if (!r.ok) return null;
+  return r.json(); // { count, remaining, limit, allowed }
+}
+
+async function apiUserHistory(phone) {
+  const r = await fetch(`${API_URL}/api/user/history?phone=${encodeURIComponent(phone)}`);
+  if (!r.ok) return [];
+  const data = await r.json();
+  return data.messages || [];
+}
+
+// ── Prompt counter (localStorage fallback — used when Supabase isn't configured) ──
 const MAX_PROMPTS = 20;
 function getPromptData() {
   try {
@@ -811,24 +864,46 @@ function OTPModal({ onSuccess, onClose }) {
   const [step, setStep] = useState("phone");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [devMode, setDevMode] = useState(false);
 
   const sendOTP = async () => {
     if (phone.length !== 10) { setError("Valid 10-digit number போடு"); return; }
     setLoading(true); setError("");
-    await new Promise(r => setTimeout(r, 1000));
-    setLoading(false); setStep("otp");
+    try {
+      const res = await apiSendOtp(phone);
+      setDevMode(!!res.dev_mode);
+      setStep("otp");
+    } catch (e) {
+      setError(e.message || "OTP send failed. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendOTP = async () => {
+    setLoading(true); setError("");
+    try {
+      const res = await apiResendOtp(phone);
+      setDevMode(!!res.dev_mode);
+      setError("OTP resent ✓");
+    } catch (e) {
+      setError(e.message || "Resend failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const verifyOTP = async () => {
     if (otp.length !== 6) { setError("6-digit OTP போடு"); return; }
     setLoading(true); setError("");
-    await new Promise(r => setTimeout(r, 800));
-    setLoading(false);
-    if (otp.length === 6) {
+    try {
+      const res = await apiVerifyOtp(phone, otp);
       setStep("success");
-      setTimeout(() => onSuccess({ phone }), 1200);
-    } else {
-      setError("Wrong OTP. Try again.");
+      setTimeout(() => onSuccess({ phone, prompts: res.prompts }), 1200);
+    } catch (e) {
+      setError(e.message || "Wrong OTP. Try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -870,17 +945,20 @@ function OTPModal({ onSuccess, onClose }) {
         ) : (
           <>
             <p style={{ margin: "0 0 6px", fontSize: 14, color: "rgba(255,255,255,0.6)", textAlign: "center" }}>+91 {phone} க்கு OTP வந்தது</p>
-            <p style={{ margin: "0 0 16px", fontSize: 12, color: "rgba(255,255,255,0.3)", textAlign: "center" }}>(Demo: use any 6 digits)</p>
+            {devMode && <p style={{ margin: "0 0 16px", fontSize: 12, color: "rgba(255,255,255,0.3)", textAlign: "center" }}>(Dev mode — check server logs for the OTP, or enter any 6 digits)</p>}
             <input
               type="tel" maxLength={6} value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, ""))}
               placeholder="• • • • • •"
               style={{ width: "100%", padding: "16px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, fontSize: 24, color: "white", outline: "none", letterSpacing: 12, textAlign: "center", boxSizing: "border-box", marginBottom: 12 }}
             />
-            {error && <p style={{ margin: "0 0 10px", fontSize: 12, color: "#ef4444", textAlign: "center" }}>{error}</p>}
+            {error && <p style={{ margin: "0 0 10px", fontSize: 12, color: error.includes("✓") ? "#10b981" : "#ef4444", textAlign: "center" }}>{error}</p>}
             <button onClick={verifyOTP} disabled={loading || otp.length !== 6} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", background: otp.length === 6 ? "linear-gradient(135deg, #059669, #10b981)" : "rgba(255,255,255,0.07)", color: otp.length === 6 ? "white" : "rgba(255,255,255,0.3)", fontSize: 15, fontWeight: 700, cursor: otp.length === 6 ? "pointer" : "default", transition: "all 0.2s" }}>
               {loading ? "Verifying..." : "Verify ✓"}
             </button>
-            <button onClick={() => setStep("phone")} style={{ width: "100%", marginTop: 8, padding: "10px", borderRadius: 10, border: "none", background: "none", color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer" }}>← Change number</button>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+              <button onClick={() => setStep("phone")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "none", color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer" }}>← Change number</button>
+              <button onClick={resendOTP} disabled={loading} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "none", color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer" }}>Resend OTP</button>
+            </div>
           </>
         )}
       </div>
@@ -1055,6 +1133,7 @@ export default function AnbuHealthAI() {
     // Capture before clearing
     const fileForAPI = pendingFile;
     const modeForAPI = pendingMode;
+    const phone = user?.phone || null;
 
     addMessage(activeChatId, userMsg);
     setInputText("");
@@ -1062,11 +1141,12 @@ export default function AnbuHealthAI() {
     setPendingMode(null);
     setIsLoading(true);
 
-    const newCount = incrementPrompt();
-    setPromptCount(newCount);
+    // Optimistic local increment — overridden by server count if phone is set
+    const localCount = incrementPrompt();
+    if (!phone) setPromptCount(localCount);
 
     try {
-      const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI);
+      const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId);
       const botMsg = {
         id: Date.now() + 1, role: "assistant",
         content: result.answer,
@@ -1075,12 +1155,26 @@ export default function AnbuHealthAI() {
         timestamp: Date.now()
       };
       addMessage(activeChatId, botMsg);
-    } catch {
-      addMessage(activeChatId, { id: Date.now() + 1, role: "assistant", content: "Sorry, error ஆச்சு. Try again.", timestamp: Date.now() });
+      // Server-side count (Supabase) is authoritative when available
+      if (result.prompts && typeof result.prompts.count === "number") {
+        setPromptCount(result.prompts.count);
+      }
+    } catch (e) {
+      if (e.message === "DAILY_LIMIT") {
+        if (e.prompts && typeof e.prompts.count === "number") setPromptCount(e.prompts.count);
+        else setPromptCount(MAX_PROMPTS);
+        addMessage(activeChatId, {
+          id: Date.now() + 1, role: "assistant",
+          content: e.message_ta || "Today's 20 prompts முடிந்தது. நாளைக்கு வா! (Resets at midnight)",
+          timestamp: Date.now()
+        });
+      } else {
+        addMessage(activeChatId, { id: Date.now() + 1, role: "assistant", content: "Sorry, error ஆச்சு. Try again.", timestamp: Date.now() });
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [inputText, pendingFile, pendingMode, promptCount, activeChatId, addMessage]);
+  }, [inputText, pendingFile, pendingMode, promptCount, activeChatId, addMessage, user]);
 
   // Keep ref always pointing to latest handleSend (fixes voice stale closure)
   handleSendRef.current = handleSend;
@@ -1118,6 +1212,45 @@ export default function AnbuHealthAI() {
     setSidebarOpen(false);
   };
 
+  // ── Login success — sync server prompt count + load Supabase chat history ──
+  const handleLoginSuccess = useCallback(async (u) => {
+    setUser(u);
+    setShowOTP(false);
+
+    if (u?.prompts && typeof u.prompts.count === "number") {
+      setPromptCount(u.prompts.count);
+    }
+
+    try {
+      const history = await apiUserHistory(u.phone);
+      if (history.length > 0) {
+        // Group flat history into chats by chat_id (fallback: one chat)
+        const grouped = {};
+        history.forEach((m, i) => {
+          const cid = m.chat_id || "history";
+          if (!grouped[cid]) grouped[cid] = [];
+          grouped[cid].push({
+            id: m.id || `${cid}_${i}`,
+            role: m.role,
+            content: m.content,
+            structured: m.structured || null,
+            fileMode: m.mode,
+            timestamp: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
+          });
+        });
+        const restoredChats = Object.entries(grouped).map(([cid, msgs], idx) => ({
+          id: cid,
+          title: (msgs[0]?.content || "Chat").slice(0, 30) + "...",
+          messages: msgs,
+        }));
+        setChats(prev => [...restoredChats, ...prev]);
+        setActiveChatId(restoredChats[0].id);
+      }
+    } catch (e) {
+      // Supabase not configured or history fetch failed — not fatal
+    }
+  }, []);
+
   const plusMenuItems = [
     { icon: <LabIcon />,  label: "Lab Report",   sublabel: "Blood test, sugar, urine",  color: "#60a5fa", mode: "lab" },
     { icon: <ScanIcon />, label: "X-Ray / Scan",  sublabel: "Chest, abdomen, MRI",       color: "#a78bfa", mode: "scan" },
@@ -1138,7 +1271,7 @@ export default function AnbuHealthAI() {
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
       `}</style>
 
-      {showOTP && <OTPModal onSuccess={(u) => { setUser(u); setShowOTP(false); }} onClose={() => setShowOTP(false)} />}
+      {showOTP && <OTPModal onSuccess={handleLoginSuccess} onClose={() => setShowOTP(false)} />}
 
       <Sidebar
         visible={sidebarOpen} onClose={() => setSidebarOpen(false)}
