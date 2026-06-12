@@ -1023,22 +1023,11 @@ export default function AnbuHealthAI() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
-      rec.lang = "ta-IN";  // primary language — auto-detects English too
+      rec.lang = "ta-IN";
       rec.continuous = false;
       rec.interimResults = false;
       rec.onend = () => setIsListening(false);
-      rec.onerror = (e) => {
-        setIsListening(false);
-        console.warn("[Voice] error:", e.error);
-        if (e.error === "not-allowed") {
-          alert("Microphone blocked.\n\nFix: Click the camera/mic icon in the browser address bar → Allow microphone → Refresh page.");
-        } else if (e.error === "network") {
-          // Chrome throws "network" on localhost — this is a Chrome limitation, not your internet
-          // Silently ignore — works fine on deployed https:// site
-          console.warn("[Voice] Chrome localhost network error — will work on deployed site");
-        }
-        // no-speech, aborted, audio-capture — all silent, user just didn't speak
-      };
+      rec.onerror = () => setIsListening(false);
       recognitionRef.current = rec;
     }
   }, []);
@@ -1103,53 +1092,23 @@ export default function AnbuHealthAI() {
     inputRef.current?.focus();
   };
 
-  // ── 5. handleVoice — multi-language, proper error feedback ──────────────────
+  // ── 5. FIXED handleVoice — auto-submits after speech ─────────────────────
   const handleVoice = () => {
-    if (!recognitionRef.current) {
-      alert("Voice not supported.\n\nPlease use Chrome browser for voice input.");
-      return;
-    }
+    if (!recognitionRef.current) { alert("Voice not supported in this browser"); return; }
     if (isListening) {
       recognitionRef.current.stop();
       setIsListening(false);
-      return;
-    }
-    // Detect language from current input or default to Tamil
-    const currentLang = inputText && /[a-zA-Z]/.test(inputText) ? "en-IN" : "ta-IN";
-    recognitionRef.current.lang = currentLang;
-
-    recognitionRef.current.onresult = (e) => {
-      const transcript = e.results[0][0].transcript;
-      if (!transcript.trim()) return;
-      setInputText(transcript);
-      setIsListening(false);
-      setTimeout(() => handleSendRef.current(transcript), 300);
-    };
-
-    recognitionRef.current.onnomatch = () => {
-      setIsListening(false);
-      // Try again with English if Tamil failed
-      if (recognitionRef.current.lang === "ta-IN") {
-        recognitionRef.current.lang = "en-IN";
-        recognitionRef.current.start();
-        setIsListening(true);
-      }
-    };
-
-    // Note: Chrome Web Speech API may fail on http://localhost with "network" error
-    // This is a Chrome limitation — voice works correctly on the deployed https:// site
-    try {
-      recognitionRef.current.abort(); // reset any stuck state first
-    } catch (_) {}
-    setTimeout(() => {
-      try {
-        recognitionRef.current.start();
-        setIsListening(true);
-      } catch (e) {
-        console.warn("[Voice] start error:", e.message);
+    } else {
+      recognitionRef.current.onresult = (e) => {
+        const transcript = e.results[0][0].transcript;
+        setInputText(transcript);
         setIsListening(false);
-      }
-    }, 100);
+        // Use ref — always calls latest handleSend, avoids stale closure
+        setTimeout(() => handleSendRef.current(transcript), 300);
+      };
+      recognitionRef.current.start();
+      setIsListening(true);
+    }
   };
 
   const handleNewChat = () => {
