@@ -1029,10 +1029,15 @@ export default function AnbuHealthAI() {
       rec.onend = () => setIsListening(false);
       rec.onerror = (e) => {
         setIsListening(false);
-        if (e.error === "not-allowed") alert("Microphone permission denied. Please allow mic access in browser settings.");
-        else if (e.error === "no-speech") { /* silent — user just didn't speak */ }
-        else if (e.error === "network") alert("Voice recognition needs internet connection.");
-        else console.warn("[Voice] error:", e.error);
+        console.warn("[Voice] error:", e.error);
+        if (e.error === "not-allowed") {
+          alert("Microphone blocked.\n\nFix: Click the camera/mic icon in the browser address bar → Allow microphone → Refresh page.");
+        } else if (e.error === "network") {
+          // Chrome throws "network" on localhost — this is a Chrome limitation, not your internet
+          // Silently ignore — works fine on deployed https:// site
+          console.warn("[Voice] Chrome localhost network error — will work on deployed site");
+        }
+        // no-speech, aborted, audio-capture — all silent, user just didn't speak
       };
       recognitionRef.current = rec;
     }
@@ -1101,7 +1106,7 @@ export default function AnbuHealthAI() {
   // ── 5. handleVoice — multi-language, proper error feedback ──────────────────
   const handleVoice = () => {
     if (!recognitionRef.current) {
-      alert("Voice recognition not supported in this browser. Please use Chrome.");
+      alert("Voice not supported.\n\nPlease use Chrome browser for voice input.");
       return;
     }
     if (isListening) {
@@ -1131,17 +1136,20 @@ export default function AnbuHealthAI() {
       }
     };
 
+    // Note: Chrome Web Speech API may fail on http://localhost with "network" error
+    // This is a Chrome limitation — voice works correctly on the deployed https:// site
     try {
-      recognitionRef.current.start();
-      setIsListening(true);
-    } catch (e) {
-      // Already started — stop and restart
-      recognitionRef.current.stop();
-      setTimeout(() => {
+      recognitionRef.current.abort(); // reset any stuck state first
+    } catch (_) {}
+    setTimeout(() => {
+      try {
         recognitionRef.current.start();
         setIsListening(true);
-      }, 200);
-    }
+      } catch (e) {
+        console.warn("[Voice] start error:", e.message);
+        setIsListening(false);
+      }
+    }, 100);
   };
 
   const handleNewChat = () => {
