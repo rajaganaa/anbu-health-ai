@@ -77,13 +77,16 @@ const NewChatIcon = () => (
   </svg>
 );
 
+// ── MSG91 Widget Config ────────────────────────────────────────────────────────
+const MSG91_WIDGET_ID = "36666e6b574a373434323634";
+const MSG91_TOKEN_AUTH = "524030TatR4smVLrr6a2e96b7P1";
+
 // ── API ────────────────────────────────────────────────────────────────────────
 const API_URL = "https://anbu-health-ai.kindrock-2ca528ff.centralindia.azurecontainerapps.io";
 
 async function callAnbuAPI(message, uploadedFile, mode, phone, chatId) {
   const formData = new FormData();
   formData.append("question", message);
-  // Only send mode when there's a file — otherwise always use "general"
   formData.append("mode", (uploadedFile && mode) ? mode : "general");
   if (uploadedFile) formData.append("image", uploadedFile);
   if (phone) formData.append("phone", phone);
@@ -107,55 +110,24 @@ async function callAnbuAPI(message, uploadedFile, mode, phone, chatId) {
   }
 
   const data = await response.json();
-  // final_answer lives at data.final_answer (= sakshi.final_answer) or buddhi.draft_answer
   const answer =
     data.final_answer ||
     data.sakshi?.final_answer ||
     data.buddhi?.draft_answer ||
     "பதில் கிடைக்கவில்லை. மீண்டும் try பண்ணுங்க.";
-  // structured card data is always at data.buddhi.structured_response
   const structured = data.buddhi?.structured_response || null;
   return {
     mode: data.mode,
     answer: answer,
     structured: structured,
-    prompts: data.prompts || null, // server-side {count, remaining, limit, allowed} when phone sent
+    prompts: data.prompts || null,
   };
-}
-
-// ── Auth API (MSG91 OTP via backend) ────────────────────────────────────────────
-async function apiSendOtp(phone) {
-  const fd = new FormData();
-  fd.append("phone", phone);
-  const r = await fetch(`${API_URL}/api/send-otp`, { method: "POST", body: fd });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.detail || "Failed to send OTP");
-  return data;
-}
-
-async function apiResendOtp(phone) {
-  const fd = new FormData();
-  fd.append("phone", phone);
-  const r = await fetch(`${API_URL}/api/auth/resend-otp`, { method: "POST", body: fd });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.detail || "Failed to resend OTP");
-  return data;
-}
-
-async function apiVerifyOtp(phone, otp) {
-  const fd = new FormData();
-  fd.append("phone", phone);
-  fd.append("otp", otp);
-  const r = await fetch(`${API_URL}/api/verify-otp`, { method: "POST", body: fd });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.detail || "Verification failed");
-  return data; // { success, phone, user_id, prompts }
 }
 
 async function apiUserStatus(phone) {
   const r = await fetch(`${API_URL}/api/user/status?phone=${encodeURIComponent(phone)}`);
   if (!r.ok) return null;
-  return r.json(); // { count, remaining, limit, allowed }
+  return r.json();
 }
 
 async function apiUserHistory(phone) {
@@ -165,7 +137,7 @@ async function apiUserHistory(phone) {
   return data.messages || [];
 }
 
-// ── Prompt counter (localStorage fallback — used when Supabase isn't configured) ──
+// ── Prompt counter (localStorage fallback) ────────────────────────────────────
 const MAX_PROMPTS = 20;
 function getPromptData() {
   try {
@@ -182,13 +154,10 @@ function incrementPrompt() {
   return updated.count;
 }
 
-// SectionLabel, Card, RowItem, FollowUpButtons, C removed (unused — new cards use inline styles)
-
-// ── 1. StructuredLabResult — matches client-approved lab template ─────────────
+// ── 1. StructuredLabResult ────────────────────────────────────────────────────
 function StructuredLabResult({ data, onFollowUp }) {
   const [lang, setLang] = useState("en");
   if (!data) return null;
-  // urgency display handled inline
   const findings   = data.findings || [];
   const abnormal   = data.abnormal_findings || findings.filter(f => /HIGH|LOW/i.test(f));
   const normalF    = data.normal_findings  || findings.filter(f => !/HIGH|LOW/i.test(f));
@@ -318,7 +287,7 @@ function StructuredLabResult({ data, onFollowUp }) {
   );
 }
 
-// ── 2. StructuredScanResult — matches client-approved scan template ───────────
+// ── 2. StructuredScanResult ───────────────────────────────────────────────────
 function StructuredScanResult({ data, onFollowUp }) {
   const [lang, setLang] = useState("en");
   if (!data) return null;
@@ -473,7 +442,7 @@ function StructuredScanResult({ data, onFollowUp }) {
   );
 }
 
-// ── 3. StructuredMedicineResult — matches client-approved medicine template ────
+// ── 3. StructuredMedicineResult ───────────────────────────────────────────────
 function StructuredMedicineResult({ data, onFollowUp }) {
   const [lang, setLang] = useState("en");
   if (!data) return null;
@@ -678,7 +647,6 @@ function MessageBubble({ msg, isLast, onFollowUp }) {
     window.speechSynthesis.speak(utter);
   };
 
-  // ── 4. FIXED: determine which structured card to show ──────────────────────
   const hasLabOrScan = msg.structured && (msg.fileMode === "lab" || msg.fileMode === "scan") && (msg.structured.findings || msg.structured.urgency);
   const hasMedicine  = msg.structured && msg.fileMode === "medicine" && (msg.structured.uses || msg.structured.dosage || msg.structured.side_effects || msg.structured.sideEffects);
   const isScan       = msg.fileMode === "scan";
@@ -690,7 +658,6 @@ function MessageBubble({ msg, isLast, onFollowUp }) {
       alignItems: "flex-start",
       animation: isLast ? "slideUp 0.3s ease" : "none"
     }}>
-      {/* Avatar */}
       <div style={{
         width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
         display: "flex", alignItems: "center", justifyContent: "center",
@@ -702,9 +669,7 @@ function MessageBubble({ msg, isLast, onFollowUp }) {
         {isUser ? <UserIcon /> : <BotIcon />}
       </div>
 
-      {/* Bubble */}
       <div style={{ maxWidth: "75%", minWidth: 80 }}>
-        {/* Upload preview chip */}
         {msg.file && (
           <div style={{
             background: "rgba(255,255,255,0.06)", borderRadius: "12px 12px 0 0", padding: "8px 12px",
@@ -732,7 +697,6 @@ function MessageBubble({ msg, isLast, onFollowUp }) {
             {msg.content}
           </p>
 
-          {/* ── Structured result cards (fixed routing) ── */}
           {hasLabOrScan && !hasMedicine && (
             isScan
               ? <StructuredScanResult data={msg.structured} onFollowUp={onFollowUp} />
@@ -743,7 +707,6 @@ function MessageBubble({ msg, isLast, onFollowUp }) {
           )}
         </div>
 
-        {/* Listen / timestamp row */}
         {!isUser && (
           <div style={{ display: "flex", gap: 8, marginTop: 5, paddingLeft: 4 }}>
             <button onClick={speakText} style={{
@@ -858,58 +821,86 @@ function UploadModal({ mode, onClose, onUpload }) {
   );
 }
 
+// ── OTPModal — MSG91 Widget Integration ───────────────────────────────────────
+// IMPORTANT: Add this to your public/index.html <head> section:
+// <script src="https://verify.msg91.com/otp-provider.js"></script>
 function OTPModal({ onSuccess, onClose }) {
   const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
-  const [step, setStep] = useState("phone");
+  const [step, setStep] = useState("phone"); // phone | otp | success
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [devMode, setDevMode] = useState(false);
 
-  const sendOTP = async () => {
-    if (phone.length !== 10) { setError("Valid 10-digit number போடு"); return; }
-    setLoading(true); setError("");
-    try {
-      const res = await apiSendOtp(phone);
-      setDevMode(!!res.dev_mode);
-      setStep("otp");
-    } catch (e) {
-      setError(e.message || "OTP send failed. Try again.");
-    } finally {
-      setLoading(false);
+  // Dynamically load MSG91 script as fallback (in case index.html tag is missing)
+  useEffect(() => {
+    if (window.initSendOTP) return;
+    const urls = [
+      "https://verify.msg91.com/otp-provider.js",
+      "https://verify.phone91.com/otp-provider.js",
+    ];
+    let i = 0;
+    function attempt() {
+      const s = document.createElement("script");
+      s.src = urls[i];
+      s.async = true;
+      s.onerror = () => { i++; if (i < urls.length) attempt(); };
+      document.head.appendChild(s);
     }
-  };
+    attempt();
+  }, []);
 
-  const resendOTP = async () => {
-    setLoading(true); setError("");
-    try {
-      const res = await apiResendOtp(phone);
-      setDevMode(!!res.dev_mode);
-      setError("OTP resent ✓");
-    } catch (e) {
-      setError(e.message || "Resend failed");
-    } finally {
-      setLoading(false);
+  const sendOTP = () => {
+    if (phone.length !== 10) {
+      setError("Valid 10-digit number போடு");
+      return;
     }
-  };
+    setLoading(true);
+    setError("");
 
-  const verifyOTP = async () => {
-    if (otp.length !== 6) { setError("6-digit OTP போடு"); return; }
-    setLoading(true); setError("");
-    try {
-      const res = await apiVerifyOtp(phone, otp);
-      setStep("success");
-      setTimeout(() => onSuccess({ phone, prompts: res.prompts }), 1200);
-    } catch (e) {
-      setError(e.message || "Wrong OTP. Try again.");
-    } finally {
-      setLoading(false);
-    }
+    const configuration = {
+      widgetId: MSG91_WIDGET_ID,
+      tokenAuth: MSG91_TOKEN_AUTH,
+      identifier: `91${phone}`,
+      exposeMethods: true,
+      success: (data) => {
+        // MSG91 verified successfully
+        setLoading(false);
+        setStep("success");
+        setTimeout(() => onSuccess({ phone, prompts: null }), 1200);
+      },
+      failure: (err) => {
+        setLoading(false);
+        setError(err?.message || "OTP verification failed. Try again.");
+        setStep("phone");
+      },
+    };
+
+    const tryInit = () => {
+      if (typeof window.initSendOTP === "function") {
+        window.initSendOTP(configuration);
+        setStep("otp");
+        setLoading(false);
+      } else {
+        // Script not yet loaded — retry once after 2s
+        setTimeout(() => {
+          if (typeof window.initSendOTP === "function") {
+            window.initSendOTP(configuration);
+            setStep("otp");
+          } else {
+            setError("OTP service load failed. Please refresh and try again.");
+          }
+          setLoading(false);
+        }, 2000);
+      }
+    };
+
+    tryInit();
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
       <div style={{ background: "#0f1117", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 24, padding: 32, width: "100%", maxWidth: 360, animation: "slideUp 0.4s ease" }}>
+
+        {/* Header */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{ width: 56, height: 56, borderRadius: 16, background: "linear-gradient(135deg, #059669, #10b981)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", boxShadow: "0 8px 24px rgba(16,185,129,0.3)" }}>
             <HeartIcon />
@@ -918,47 +909,82 @@ function OTPModal({ onSuccess, onClose }) {
           <p style={{ margin: "6px 0 0", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>Tamil Nadu Village Healthcare</p>
         </div>
 
-        {step === "success" ? (
+        {/* Step: success */}
+        {step === "success" && (
           <div style={{ textAlign: "center", padding: "20px 0" }}>
             <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
             <p style={{ margin: 0, fontSize: 16, color: "#10b981", fontWeight: 700 }}>Login Success!</p>
             <p style={{ margin: "6px 0 0", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>Welcome to Anbu Health AI</p>
           </div>
-        ) : step === "phone" ? (
+        )}
+
+        {/* Step: otp — MSG91 widget handles the actual OTP UI in its own popup */}
+        {step === "otp" && (
           <>
-            <p style={{ margin: "0 0 16px", fontSize: 14, color: "rgba(255,255,255,0.6)", textAlign: "center" }}>Phone number போடு — OTP வரும்</p>
+            <div style={{ textAlign: "center", padding: "20px 0" }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>📱</div>
+              <p style={{ margin: 0, fontSize: 15, color: "white", fontWeight: 600 }}>+91 {phone} க்கு OTP வந்தது</p>
+              <p style={{ margin: "8px 0 16px", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
+                MSG91 popup-ல் OTP enter செய்யுங்கள்
+              </p>
+              <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.25)" }}>
+                Popup காணவில்லையா? Browser popup blocker check பண்ணுங்க.
+              </p>
+            </div>
+            {error && <p style={{ fontSize: 12, color: "#ef4444", textAlign: "center", margin: "0 0 10px" }}>{error}</p>}
+            <button
+              onClick={() => { setStep("phone"); setError(""); }}
+              style={{ width: "100%", padding: "12px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.1)", background: "none", color: "rgba(255,255,255,0.5)", fontSize: 14, cursor: "pointer", marginTop: 8, fontFamily: "inherit" }}
+            >
+              ← Change number
+            </button>
+          </>
+        )}
+
+        {/* Step: phone */}
+        {step === "phone" && (
+          <>
+            <p style={{ margin: "0 0 16px", fontSize: 14, color: "rgba(255,255,255,0.6)", textAlign: "center" }}>
+              Phone number போடு — OTP வரும்
+            </p>
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-              <div style={{ padding: "13px 12px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, fontSize: 14, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 4 }}>
+              <div style={{ padding: "13px 12px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, fontSize: 14, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                 <PhoneIcon /> +91
               </div>
               <input
-                type="tel" maxLength={10} value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, ""))}
+                type="tel"
+                maxLength={10}
+                value={phone}
+                onChange={e => { setPhone(e.target.value.replace(/\D/g, "")); setError(""); }}
+                onKeyDown={e => e.key === "Enter" && sendOTP()}
                 placeholder="98765 43210"
-                style={{ flex: 1, padding: "13px 14px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, fontSize: 16, color: "white", outline: "none", letterSpacing: 2 }}
+                autoFocus
+                style={{ flex: 1, padding: "13px 14px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, fontSize: 16, color: "white", outline: "none", letterSpacing: 2, fontFamily: "inherit" }}
               />
             </div>
             {error && <p style={{ margin: "0 0 10px", fontSize: 12, color: "#ef4444", textAlign: "center" }}>{error}</p>}
-            <button onClick={sendOTP} disabled={loading || phone.length !== 10} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", background: phone.length === 10 ? "linear-gradient(135deg, #059669, #10b981)" : "rgba(255,255,255,0.07)", color: phone.length === 10 ? "white" : "rgba(255,255,255,0.3)", fontSize: 15, fontWeight: 700, cursor: phone.length === 10 ? "pointer" : "default", transition: "all 0.2s" }}>
-              {loading ? "Sending..." : "OTP அனுப்பு →"}
+            <button
+              onClick={sendOTP}
+              disabled={loading || phone.length !== 10}
+              style={{
+                width: "100%", padding: "14px", borderRadius: 12, border: "none",
+                background: phone.length === 10 ? "linear-gradient(135deg, #059669, #10b981)" : "rgba(255,255,255,0.07)",
+                color: phone.length === 10 ? "white" : "rgba(255,255,255,0.3)",
+                fontSize: 15, fontWeight: 700,
+                cursor: phone.length === 10 ? "pointer" : "default",
+                transition: "all 0.2s", fontFamily: "inherit"
+              }}
+            >
+              {loading ? "Loading..." : "OTP அனுப்பு →"}
             </button>
-          </>
-        ) : (
-          <>
-            <p style={{ margin: "0 0 6px", fontSize: 14, color: "rgba(255,255,255,0.6)", textAlign: "center" }}>+91 {phone} க்கு OTP வந்தது</p>
-            {devMode && <p style={{ margin: "0 0 16px", fontSize: 12, color: "rgba(255,255,255,0.3)", textAlign: "center" }}>(Dev mode — check server logs for the OTP, or enter any 6 digits)</p>}
-            <input
-              type="tel" maxLength={6} value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, ""))}
-              placeholder="• • • • • •"
-              style={{ width: "100%", padding: "16px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, fontSize: 24, color: "white", outline: "none", letterSpacing: 12, textAlign: "center", boxSizing: "border-box", marginBottom: 12 }}
-            />
-            {error && <p style={{ margin: "0 0 10px", fontSize: 12, color: error.includes("✓") ? "#10b981" : "#ef4444", textAlign: "center" }}>{error}</p>}
-            <button onClick={verifyOTP} disabled={loading || otp.length !== 6} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", background: otp.length === 6 ? "linear-gradient(135deg, #059669, #10b981)" : "rgba(255,255,255,0.07)", color: otp.length === 6 ? "white" : "rgba(255,255,255,0.3)", fontSize: 15, fontWeight: 700, cursor: otp.length === 6 ? "pointer" : "default", transition: "all 0.2s" }}>
-              {loading ? "Verifying..." : "Verify ✓"}
+
+            {/* Skip / Guest option */}
+            <button
+              onClick={() => onClose()}
+              style={{ width: "100%", padding: "10px", marginTop: 10, borderRadius: 12, border: "none", background: "none", color: "rgba(255,255,255,0.25)", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}
+            >
+              Guest-ஆ தொடரு (20 prompts / day)
             </button>
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-              <button onClick={() => setStep("phone")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "none", color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer" }}>← Change number</button>
-              <button onClick={resendOTP} disabled={loading} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "none", color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer" }}>Resend OTP</button>
-            </div>
           </>
         )}
       </div>
@@ -1130,7 +1156,6 @@ export default function AnbuHealthAI() {
       timestamp: Date.now()
     };
 
-    // Capture before clearing
     const fileForAPI = pendingFile;
     const modeForAPI = pendingMode;
     const phone = user?.phone || null;
@@ -1141,7 +1166,6 @@ export default function AnbuHealthAI() {
     setPendingMode(null);
     setIsLoading(true);
 
-    // Server-side count when logged in; localStorage fallback only without phone
     if (!phone) {
       const localCount = incrementPrompt();
       setPromptCount(localCount);
@@ -1157,7 +1181,6 @@ export default function AnbuHealthAI() {
         timestamp: Date.now()
       };
       addMessage(activeChatId, botMsg);
-      // Server-side count (Supabase) is authoritative when available
       if (result.prompts && typeof result.prompts.count === "number") {
         setPromptCount(result.prompts.count);
       }
@@ -1178,7 +1201,6 @@ export default function AnbuHealthAI() {
     }
   }, [inputText, pendingFile, pendingMode, promptCount, activeChatId, addMessage, user]);
 
-  // Keep ref always pointing to latest handleSend (fixes voice stale closure)
   handleSendRef.current = handleSend;
 
   const handleUpload = (file, mode) => {
@@ -1188,7 +1210,6 @@ export default function AnbuHealthAI() {
     inputRef.current?.focus();
   };
 
-  // ── 5. FIXED handleVoice — auto-submits after speech ─────────────────────
   const handleVoice = () => {
     if (!recognitionRef.current) { alert("Voice not supported in this browser"); return; }
     if (isListening) {
@@ -1199,7 +1220,6 @@ export default function AnbuHealthAI() {
         const transcript = e.results[0][0].transcript;
         setInputText(transcript);
         setIsListening(false);
-        // Use ref — always calls latest handleSend, avoids stale closure
         setTimeout(() => handleSendRef.current(transcript), 300);
       };
       recognitionRef.current.start();
@@ -1214,7 +1234,6 @@ export default function AnbuHealthAI() {
     setSidebarOpen(false);
   };
 
-  // ── Login success — sync server prompt count + load Supabase chat history ──
   const handleLoginSuccess = useCallback(async (u) => {
     setUser(u);
     setShowOTP(false);
@@ -1231,7 +1250,6 @@ export default function AnbuHealthAI() {
     try {
       const history = await apiUserHistory(u.phone);
       if (history.length > 0) {
-        // Group flat history into chats by chat_id (fallback: one chat)
         const grouped = {};
         history.forEach((m, i) => {
           const cid = m.chat_id || "history";
@@ -1245,7 +1263,7 @@ export default function AnbuHealthAI() {
             timestamp: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
           });
         });
-        const restoredChats = Object.entries(grouped).map(([cid, msgs], idx) => ({
+        const restoredChats = Object.entries(grouped).map(([cid, msgs]) => ({
           id: cid,
           title: (msgs[0]?.content || "Chat").slice(0, 30) + "...",
           messages: msgs,
@@ -1254,7 +1272,7 @@ export default function AnbuHealthAI() {
         setActiveChatId(restoredChats[0].id);
       }
     } catch (e) {
-      // Supabase not configured or history fetch failed — not fatal
+      // History fetch failed — not fatal
     }
   }, []);
 
