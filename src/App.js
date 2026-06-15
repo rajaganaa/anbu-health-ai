@@ -60,6 +60,11 @@ const UploadIcon = () => (
     <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
   </svg>
 );
+const PhoneIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13.1a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.77 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 17z" />
+  </svg>
+);
 const HistoryIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.95" />
@@ -71,16 +76,6 @@ const NewChatIcon = () => (
     <line x1="12" y1="9" x2="12" y2="13" /><line x1="10" y1="11" x2="14" y2="11" />
   </svg>
 );
-const LogoutIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-    <polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
-  </svg>
-);
-
-// ── MSG91 Widget Config ────────────────────────────────────────────────────────
-const MSG91_WIDGET_ID   = "36666e6b574a373434323634";
-const MSG91_TOKEN_AUTH  = "524030TatR4smVLrr6s2e96b7P1";
 
 // ── API ────────────────────────────────────────────────────────────────────────
 const API_URL = "https://anbu-health-ai.kindrock-2ca528ff.centralindia.azurecontainerapps.io";
@@ -88,6 +83,7 @@ const API_URL = "https://anbu-health-ai.kindrock-2ca528ff.centralindia.azurecont
 async function callAnbuAPI(message, uploadedFile, mode, phone, chatId) {
   const formData = new FormData();
   formData.append("question", message);
+  // Only send mode when there's a file — otherwise always use "general"
   formData.append("mode", (uploadedFile && mode) ? mode : "general");
   if (uploadedFile) formData.append("image", uploadedFile);
   if (phone) formData.append("phone", phone);
@@ -106,40 +102,60 @@ async function callAnbuAPI(message, uploadedFile, mode, phone, chatId) {
     throw err;
   }
 
-  if (!response.ok) throw new Error(`Server error: ${response.status}`);
+  if (!response.ok) {
+    throw new Error(`Server error: ${response.status}`);
+  }
 
   const data = await response.json();
+  // final_answer lives at data.final_answer (= sakshi.final_answer) or buddhi.draft_answer
   const answer =
     data.final_answer ||
     data.sakshi?.final_answer ||
     data.buddhi?.draft_answer ||
     "பதில் கிடைக்கவில்லை. மீண்டும் try பண்ணுங்க.";
+  // structured card data is always at data.buddhi.structured_response
   const structured = data.buddhi?.structured_response || null;
   return {
     mode: data.mode,
     answer: answer,
     structured: structured,
-    prompts: data.prompts || null,
+    prompts: data.prompts || null, // server-side {count, remaining, limit, allowed} when phone sent
   };
 }
 
-// ── Backend token-verify (server-side step 2) ─────────────────────────────────
-async function apiVerifyWidgetToken(accessToken) {
+// ── Auth API (MSG91 OTP via backend) ────────────────────────────────────────────
+async function apiSendOtp(phone) {
   const fd = new FormData();
-  fd.append("access_token", accessToken);
-  const r = await fetch(`${API_URL}/api/auth/verify-widget-token`, {
-    method: "POST",
-    body: fd,
-  });
+  fd.append("phone", phone);
+  const r = await fetch(`${API_URL}/api/send-otp`, { method: "POST", body: fd });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.detail || "Token verification failed");
+  if (!r.ok) throw new Error(data.detail || "Failed to send OTP");
+  return data;
+}
+
+async function apiResendOtp(phone) {
+  const fd = new FormData();
+  fd.append("phone", phone);
+  const r = await fetch(`${API_URL}/api/auth/resend-otp`, { method: "POST", body: fd });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || "Failed to resend OTP");
+  return data;
+}
+
+async function apiVerifyOtp(phone, otp) {
+  const fd = new FormData();
+  fd.append("phone", phone);
+  fd.append("otp", otp);
+  const r = await fetch(`${API_URL}/api/verify-otp`, { method: "POST", body: fd });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || "Verification failed");
   return data; // { success, phone, user_id, prompts }
 }
 
 async function apiUserStatus(phone) {
   const r = await fetch(`${API_URL}/api/user/status?phone=${encodeURIComponent(phone)}`);
   if (!r.ok) return null;
-  return r.json();
+  return r.json(); // { count, remaining, limit, allowed }
 }
 
 async function apiUserHistory(phone) {
@@ -149,7 +165,7 @@ async function apiUserHistory(phone) {
   return data.messages || [];
 }
 
-// ── Prompt counter (localStorage fallback) ─────────────────────────────────────
+// ── Prompt counter (localStorage fallback — used when Supabase isn't configured) ──
 const MAX_PROMPTS = 20;
 function getPromptData() {
   try {
@@ -166,225 +182,13 @@ function incrementPrompt() {
   return updated.count;
 }
 
-// ── MSG91 Widget Loader ────────────────────────────────────────────────────────
-function loadMsg91Script(onSuccess, onFailure) {
-  const configuration = {
-    widgetId: MSG91_WIDGET_ID,
-    tokenAuth: MSG91_TOKEN_AUTH,
-    exposeMethods: false,
-    success: (data) => {
-      // data.message is the access token returned by the widget
-      onSuccess(data);
-    },
-    failure: (error) => {
-      console.error("[MSG91] Widget failure:", error);
-      onFailure(error);
-    },
-  };
+// SectionLabel, Card, RowItem, FollowUpButtons, C removed (unused — new cards use inline styles)
 
-  function loadScript(urls) {
-    let i = 0;
-    function attempt() {
-      const s = document.createElement("script");
-      s.src = urls[i];
-      s.async = true;
-      s.onload = () => {
-        if (typeof window.initSendOTP === "function") {
-          window.initSendOTP(configuration);
-        }
-      };
-      s.onerror = () => {
-        i++;
-        if (i < urls.length) attempt();
-      };
-      document.head.appendChild(s);
-    }
-    attempt();
-  }
-
-  loadScript([
-    "https://verify.msg91.com/otp-provider.js",
-    "https://verify.phone91.com/otp-provider.js",
-  ]);
-}
-
-// ── MSG91 Widget Auth Screen ───────────────────────────────────────────────────
-function OtpWidgetScreen({ onAuthenticated }) {
-  const [status, setStatus] = useState("loading"); // loading | ready | verifying | error
-  const [errorMsg, setErrorMsg] = useState("");
-  const scriptLoaded = useRef(false);
-
-  useEffect(() => {
-    if (scriptLoaded.current) return;
-    scriptLoaded.current = true;
-
-    // Small delay so the DOM is ready
-    const timer = setTimeout(() => {
-      loadMsg91Script(
-        async (data) => {
-          // data.message = access_token from MSG91 widget
-          const accessToken = data?.message || data?.token || data;
-          if (!accessToken) {
-            setErrorMsg("OTP verification failed. Try again.");
-            setStatus("error");
-            return;
-          }
-          setStatus("verifying");
-          try {
-            const result = await apiVerifyWidgetToken(accessToken);
-            if (result.success) {
-              const phone = result.phone || "";
-              localStorage.setItem("anbu_phone", phone);
-              localStorage.setItem("anbu_widget_token", accessToken);
-              onAuthenticated({ phone, prompts: result.prompts });
-            } else {
-              setErrorMsg("Verification failed. Please try again.");
-              setStatus("error");
-            }
-          } catch (e) {
-            // If backend verify endpoint not yet deployed, fall back gracefully
-            // by storing the token and letting the user in
-            console.warn("[MSG91] Backend verify error (fallback mode):", e.message);
-            localStorage.setItem("anbu_widget_token", accessToken);
-            onAuthenticated({ phone: "", prompts: null });
-          }
-        },
-        (err) => {
-          setErrorMsg("OTP அனுப்புவதில் பிழை ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்.");
-          setStatus("error");
-        }
-      );
-      setStatus("ready");
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [onAuthenticated]);
-
-  return (
-    <div style={{
-      minHeight: "100vh",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      background: "radial-gradient(ellipse 80% 80% at 50% -20%, rgba(34,197,94,0.15), transparent), #0a0a0a",
-      padding: "20px",
-      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-    }}>
-      <div style={{
-        width: "100%",
-        maxWidth: 400,
-        background: "rgba(255,255,255,0.04)",
-        border: "1px solid rgba(255,255,255,0.08)",
-        borderRadius: 20,
-        padding: "36px 32px",
-        backdropFilter: "blur(24px)",
-        boxShadow: "0 32px 64px rgba(0,0,0,0.5)",
-        animation: "fadeIn 0.4s ease",
-      }}>
-        {/* Logo */}
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{
-            width: 64, height: 64, borderRadius: 18,
-            background: "linear-gradient(135deg,#22c55e,#16a34a)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            margin: "0 auto 16px",
-            boxShadow: "0 8px 24px rgba(34,197,94,0.35)",
-          }}>
-            <HeartIcon />
-          </div>
-          <h1 style={{ color: "#fff", fontSize: 22, fontWeight: 700, margin: "0 0 6px" }}>
-            Anbu Health AI
-          </h1>
-          <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 13, margin: 0 }}>
-            Tamil Nadu Village Healthcare
-          </p>
-        </div>
-
-        {/* Status messages */}
-        {status === "loading" && (
-          <div style={{ textAlign: "center", padding: "20px 0" }}>
-            <div style={{
-              width: 28, height: 28, borderRadius: "50%",
-              border: "2px solid rgba(34,197,94,0.3)",
-              borderTopColor: "#22c55e",
-              animation: "spin 0.8s linear infinite",
-              margin: "0 auto 12px",
-            }} />
-            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 13 }}>Widget loading...</p>
-          </div>
-        )}
-
-        {status === "verifying" && (
-          <div style={{ textAlign: "center", padding: "20px 0" }}>
-            <div style={{
-              width: 28, height: 28, borderRadius: "50%",
-              border: "2px solid rgba(34,197,94,0.3)",
-              borderTopColor: "#22c55e",
-              animation: "spin 0.8s linear infinite",
-              margin: "0 auto 12px",
-            }} />
-            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 13 }}>
-              Verifying your OTP...
-            </p>
-          </div>
-        )}
-
-        {status === "error" && (
-          <div style={{
-            background: "rgba(239,68,68,0.08)",
-            border: "1px solid rgba(239,68,68,0.2)",
-            borderRadius: 10,
-            padding: "12px 16px",
-            marginBottom: 16,
-            textAlign: "center",
-          }}>
-            <p style={{ color: "#f87171", fontSize: 13, margin: "0 0 10px" }}>{errorMsg}</p>
-            <button
-              onClick={() => { setStatus("loading"); setErrorMsg(""); scriptLoaded.current = false; }}
-              style={{
-                background: "rgba(239,68,68,0.15)",
-                border: "1px solid rgba(239,68,68,0.3)",
-                borderRadius: 8,
-                color: "#f87171",
-                padding: "6px 16px",
-                fontSize: 13,
-                cursor: "pointer",
-              }}
-            >
-              Try Again
-            </button>
-          </div>
-        )}
-
-        {/* The MSG91 widget mounts itself into the DOM here */}
-        <div id="otp-widget-container" style={{ marginTop: status === "ready" ? 0 : 8 }} />
-
-        <p style={{
-          color: "rgba(255,255,255,0.2)",
-          fontSize: 11,
-          textAlign: "center",
-          marginTop: 20,
-          lineHeight: 1.5,
-        }}>
-          உங்கள் phone number பாதுகாப்பாக உள்ளது.<br />
-          OTP மட்டுமே verify செய்யப்படும்.
-        </p>
-      </div>
-
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        @keyframes fadeIn { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:none } }
-        @keyframes spin   { to { transform:rotate(360deg) } }
-        * { box-sizing: border-box; }
-      `}</style>
-    </div>
-  );
-}
-
-// ── StructuredLabResult ───────────────────────────────────────────────────────
+// ── 1. StructuredLabResult — matches client-approved lab template ─────────────
 function StructuredLabResult({ data, onFollowUp }) {
   const [lang, setLang] = useState("en");
   if (!data) return null;
+  // urgency display handled inline
   const findings   = data.findings || [];
   const abnormal   = data.abnormal_findings || findings.filter(f => /HIGH|LOW/i.test(f));
   const normalF    = data.normal_findings  || findings.filter(f => !/HIGH|LOW/i.test(f));
@@ -509,567 +313,1109 @@ function StructuredLabResult({ data, onFollowUp }) {
           {followUps.map((p,i)=><button key={i} onClick={()=>onFollowUp&&onFollowUp(p)} style={S.fq}>{p} ↗</button>)}
         </div>
       </div>
-      <p style={{ fontSize:12,color:"rgba(255,255,255,0.25)",textAlign:"center",margin:"8px 0 0",fontStyle:"italic" }}>{disclaimer}</p>
+      <p style={{ fontSize:12,color:"rgba(255,255,255,0.25)",textAlign:"center",paddingTop:4 }}>⚕ {disclaimer}</p>
+    </div>
+  );
+}
+
+// ── 2. StructuredScanResult — matches client-approved scan template ───────────
+function StructuredScanResult({ data, onFollowUp }) {
+  const [lang, setLang] = useState("en");
+  if (!data) return null;
+  const scanType  = data.scan_type  || data.scanType  || "Scan";
+  const bodyPart  = data.body_part  || data.bodyPart  || "";
+  const patient   = data.patient_name || "";
+  const scanDate  = data.scan_date  || data.scanDate  || "";
+  const side      = data.side || "";
+  const findings  = data.findings   || [];
+  const summary   = data.summary    || "Scan analysis complete.";
+  const summaryTa = data.summary_tamil || summary;
+  const rec       = data.recommendation || "";
+  const implants  = data.implants_detected || data.implantDetected || false;
+  const implantD  = data.implant_details  || data.implantDetails  || "";
+  const fracture  = data.fracture_visible || data.fractureVisible || false;
+  const urgency   = data.urgency    || "routine";
+  const limitations = data.limitations || ["Nerve damage (needs clinical exam)","Tendon/ligament tears (needs MRI)","Cartilage quality","Pain severity","Infection (needs blood tests)"];
+  const disclaimer= data.disclaimer || "This analysis is AI-generated for educational guidance only — not a radiologist's report.";
+  const urgencyMap = {
+    emergency:{ color:"#f87171",bg:"rgba(248,113,113,0.1)",icon:"🚨",label:"Emergency — go to hospital now" },
+    urgent:   { color:"#f87171",bg:"rgba(248,113,113,0.08)",icon:"⚠️",label:"Urgent — within 24–48 hrs" },
+    followup: { color:"#fbbf24",bg:"rgba(251,191,36,0.08)",icon:"📋",label:"Follow-up required — consult surgeon" },
+    routine:  { color:"#34d399",bg:"rgba(52,211,153,0.08)",icon:"✅",label:"Routine review — no immediate action" },
+    normal:   { color:"#34d399",bg:"rgba(52,211,153,0.08)",icon:"✅",label:"No immediate action needed" },
+  };
+  const uc = urgencyMap[urgency] || urgencyMap.routine;
+  const defaultChecklist = [
+    { label:"Bone cortex",       status:fracture?"Disrupted (fracture)":"Normal",ok:!fracture },
+    { label:"Implant / hardware",status:implants?"Detected":"None",             ok:true },
+    { label:"Joint space",       status:"Not clearly evaluable",                ok:null },
+    { label:"Soft tissue",       status:"No gross abnormality",                 ok:true },
+    { label:"Bone density",      status:"Normal",                               ok:true },
+  ];
+  const S = {
+    card: { background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.09)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    cardD:{ background:"rgba(239,68,68,0.05)",border:"0.5px solid rgba(239,68,68,0.22)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    cardW:{ background:"rgba(245,158,11,0.05)",border:"0.5px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    lbl: { fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8,display:"block" },
+    lb: (a)=>({ fontSize:11,padding:"3px 10px",borderRadius:6,border:`0.5px solid ${a?"rgba(96,165,250,0.4)":"rgba(255,255,255,0.15)"}`,background:a?"rgba(96,165,250,0.12)":"transparent",color:a?"#60a5fa":"rgba(255,255,255,0.4)",cursor:"pointer" }),
+    fq: { fontSize:12,padding:"5px 12px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit" },
+  };
+  const followUps = [];
+  if (implants) followUps.push("Can I do MRI with metal implant?");
+  if (fracture)  followUps.push("Fracture healing எவ்வளவு time?");
+  followUps.push("இந்த scan என்ன சொல்கிறது?");
+  followUps.push("Doctor கிட்ட என்ன கேக்கணும்?");
+  return (
+    <div style={{ marginTop:14 }}>
+      <div style={S.card}>
+        <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:12 }}>
+          <div style={{ width:40,height:40,borderRadius:10,background:"rgba(96,165,250,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0 }}>🩻</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:16,fontWeight:500,color:"rgba(255,255,255,0.9)" }}>{scanType}{bodyPart?` — ${bodyPart}`:""}</div>
+            <div style={{ fontSize:12,color:"rgba(255,255,255,0.4)" }}>{side?`${side} side`:"Medical Imaging Analysis"}</div>
+          </div>
+          {implants&&<span style={{ fontSize:11,padding:"2px 8px",borderRadius:6,background:"rgba(248,113,113,0.12)",color:"#f87171",border:"0.5px solid rgba(248,113,113,0.3)",flexShrink:0 }}>Post-op</span>}
+        </div>
+        <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8 }}>
+          {[["Scan type",scanType],["Body part",bodyPart||"—"],["Patient",patient||"—"],["Date",scanDate||"—"]].map(([k,v])=>(
+            <div key={k} style={{ background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"7px 10px" }}>
+              <div style={{ fontSize:11,color:"rgba(255,255,255,0.35)",marginBottom:2 }}>{k}</div>
+              <div style={{ fontSize:13,fontWeight:500,color:"rgba(255,255,255,0.85)" }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={S.card}>
+        <span style={S.lbl}>Detected Modality</span>
+        <span style={{ fontSize:12,padding:"3px 10px",borderRadius:20,background:"rgba(96,165,250,0.1)",color:"#60a5fa",border:"0.5px solid rgba(96,165,250,0.25)",fontWeight:500 }}>🔬 {scanType}</span>
+      </div>
+      <div style={S.card}>
+        <div style={{ display:"flex",gap:6,marginBottom:10 }}>
+          <button onClick={()=>setLang("en")} style={S.lb(lang==="en")}>English</button>
+          <button onClick={()=>setLang("ta")} style={S.lb(lang==="ta")}>Tamil</button>
+        </div>
+        <p style={{ fontSize:14,lineHeight:1.7,color:"rgba(255,255,255,0.85)",margin:0 }}>{lang==="ta"?summaryTa:summary}</p>
+      </div>
+      <div style={{ display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,marginBottom:10,background:uc.bg,border:`0.5px solid ${uc.color}33` }}>
+        <span style={{ fontSize:18,flexShrink:0 }}>{uc.icon}</span>
+        <span style={{ fontSize:13,fontWeight:500,color:uc.color }}>{uc.label}</span>
+      </div>
+      {findings.length>0&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Key Findings</span>
+          {findings.map((f,i)=>{
+            const fStr=typeof f==="string"?f:(f.title||"");
+            const isA=/abnormal|fracture|damage|hardware|implant|disrupted/i.test(fStr);
+            const isN=/normal|intact|no abnormality|satisfactory|maintained/i.test(fStr);
+            const dotC=isA?"#f87171":isN?"#34d399":"#fbbf24";
+            return(
+              <div key={i} style={{ display:"flex",alignItems:"flex-start",gap:10,padding:"8px 0",borderBottom:i<findings.length-1?"0.5px solid rgba(255,255,255,0.05)":"none" }}>
+                <div style={{ width:8,height:8,borderRadius:"50%",background:dotC,flexShrink:0,marginTop:5 }}/>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13,color:"rgba(255,255,255,0.82)",lineHeight:1.5,fontWeight:isA?500:400 }}>{fStr}</div>
+                  {typeof f==="object"&&f.detail&&<div style={{ fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:2 }}>{f.detail}</div>}
+                </div>
+                {isA&&<span style={{ fontSize:11,padding:"2px 7px",borderRadius:20,flexShrink:0,background:"rgba(251,191,36,0.1)",color:"#fbbf24",border:"0.5px solid rgba(251,191,36,0.25)" }}>Review</span>}
+                {isN&&!isA&&<span style={{ fontSize:11,padding:"2px 7px",borderRadius:20,flexShrink:0,background:"rgba(52,211,153,0.1)",color:"#34d399",border:"0.5px solid rgba(52,211,153,0.25)" }}>Normal</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div style={S.card}>
+        <span style={S.lbl}>Structure Checklist</span>
+        {defaultChecklist.map((item,i)=>(
+          <div key={i} style={{ display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:i<defaultChecklist.length-1?"0.5px solid rgba(255,255,255,0.05)":"none",fontSize:13 }}>
+            <span style={{ flex:1,color:"rgba(255,255,255,0.6)" }}>{item.label}</span>
+            <span style={{ fontWeight:500,color:item.ok===false?"#f87171":item.ok===null?"rgba(255,255,255,0.4)":"#34d399" }}>{item.status}</span>
+          </div>
+        ))}
+      </div>
+      {implants&&(
+        <div style={S.cardD}>
+          <div style={{ display:"flex",gap:8,alignItems:"center",marginBottom:implantD?8:0,fontSize:13,color:"#fca5a5",fontWeight:500 }}>
+            <span style={{ flexShrink:0 }}>⚠️</span>
+            Metal implant detected — inform all future doctors, especially before MRI
+          </div>
+          {implantD&&<div style={{ fontSize:12,color:"rgba(255,255,255,0.5)",paddingLeft:24 }}>{implantD}</div>}
+        </div>
+      )}
+      <div style={S.card}>
+        <span style={S.lbl}>What this scan cannot show</span>
+        <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginBottom:8 }}>
+          {limitations.map((l,i)=><span key={i} style={{ fontSize:12,padding:"3px 10px",borderRadius:20,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.4)",border:"0.5px solid rgba(255,255,255,0.1)" }}>{l}</span>)}
+        </div>
+        <p style={{ fontSize:12,color:"rgba(255,255,255,0.3)",margin:0 }}>CT/X-ray shows bone and hardware only. Soft tissue, nerve, and vascular status require additional investigation.</p>
+      </div>
+      {rec&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Next Steps</span>
+          {rec.split(/[.;]/).filter(Boolean).map((item,i,arr)=>(
+            <div key={i} style={{ display:"flex",alignItems:"flex-start",gap:8,padding:"5px 0",fontSize:13,color:"rgba(255,255,255,0.8)",borderBottom:i<arr.length-1?"0.5px solid rgba(255,255,255,0.05)":"none" }}>
+              <span style={{ flexShrink:0 }}>→</span><span style={{ lineHeight:1.55 }}>{item.trim()}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={S.cardW}>
+        <div style={{ display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:"#fbbf24" }}>
+          <span style={{ flexShrink:0,marginTop:1 }}>ℹ️</span>
+          <span style={{ lineHeight:1.55 }}>{disclaimer} <strong>Always get a formal radiology report</strong> from a qualified radiologist and consult your doctor.</span>
+        </div>
+      </div>
+      <div style={S.card}>
+        <span style={S.lbl}>💬 இதை கேளுங்க</span>
+        <div style={{ display:"flex",flexWrap:"wrap",gap:8 }}>
+          {followUps.map((p,i)=><button key={i} onClick={()=>onFollowUp&&onFollowUp(p)} style={S.fq}>{p} ↗</button>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 3. StructuredMedicineResult — matches client-approved medicine template ────
+function StructuredMedicineResult({ data, onFollowUp }) {
+  const [lang, setLang] = useState("en");
+  if (!data) return null;
+  const drugName    = data.drug_name   || data.drugName   || "";
+  const drugCat     = data.drug_category||data.drugCategory||"";
+  const salt        = data.salt        || drugCat         || "";
+  const manufacturer= data.manufacturer|| "";
+  const mfgDate     = data.mfg_date   || data.mfgDate    || "";
+  const expDate     = data.exp_date   || data.expDate     || "";
+  const mrp         = data.mrp        || "";
+  const uses        = data.uses        || [];
+  const dosage      = data.dosage      || "";
+  const dosageAdult = data.dosage_adult|| "";
+  const dosageChild = data.dosage_child|| "";
+  const whenToTake  = data.when_to_take|| "";
+  const howToTake   = data.how_to_take || "";
+  const duration    = data.duration    || "";
+  const sideEffects = data.side_effects||data.sideEffects ||[];
+  const warnings    = data.warnings    || [];
+  const interactions= data.interactions|| [];
+  const alternatives= data.alternatives|| [];
+  const summary     = data.summary     || "";
+  const summaryTa   = data.summary_tamil||summary;
+  const rec         = data.recommendation || "";
+  const disclaimer  = data.disclaimer  || "Educational information only — always follow your doctor's prescription.";
+  const isRx        = data.is_rx!==undefined?data.is_rx:true;
+  const mid         = Math.ceil(sideEffects.length/2);
+  const mildSE      = sideEffects.slice(0,mid);
+  const seriousSE   = sideEffects.slice(mid);
+  const populations = [
+    { label:"Pregnancy",     val:data.pregnancy    ||"Use with caution",ok:false },
+    { label:"Breastfeeding", val:data.breastfeeding||"Ask doctor",      ok:null  },
+    { label:"Children",      val:data.children     ||"Weight-based",    ok:null  },
+    { label:"Elderly",       val:data.elderly      ||"Lower dose",      ok:null  },
+    { label:"Liver disease", val:warnings.some(w=>/liver/i.test(w))?"Avoid / doctor only":"Ask doctor",ok:false },
+    { label:"Kidney disease",val:data.kidney       ||"Reduce dose",     ok:null  },
+  ];
+  const S = {
+    card: { background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.09)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    cardD:{ background:"rgba(239,68,68,0.05)",border:"0.5px solid rgba(239,68,68,0.22)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    cardW:{ background:"rgba(245,158,11,0.05)",border:"0.5px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    lbl: { fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8,display:"block" },
+    lb: (a)=>({ fontSize:11,padding:"3px 10px",borderRadius:6,border:`0.5px solid ${a?"rgba(96,165,250,0.4)":"rgba(255,255,255,0.15)"}`,background:a?"rgba(96,165,250,0.12)":"transparent",color:a?"#60a5fa":"rgba(255,255,255,0.4)",cursor:"pointer" }),
+    row: (last)=>({ display:"flex",alignItems:"flex-start",gap:10,padding:"7px 0",borderBottom:last?"none":"0.5px solid rgba(255,255,255,0.05)",fontSize:13 }),
+    rl: { color:"rgba(255,255,255,0.4)",minWidth:130,flexShrink:0 },
+    rv: { color:"rgba(255,255,255,0.85)",fontWeight:500,flex:1 },
+    fq: { fontSize:12,padding:"5px 12px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit" },
+  };
+  const followUps = [
+    drugName?`Can I take ${drugName} during pregnancy?`:"Safe during pregnancy?",
+    "What is maximum daily dose?",
+    drugName?`${drugName} side effects in Tamil`:"Side effects in Tamil",
+    "Doctor prescription தேவையா?",
+  ];
+  return (
+    <div style={{ marginTop:14 }}>
+      <div style={S.card}>
+        <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:12 }}>
+          <div style={{ width:40,height:40,borderRadius:10,background:"rgba(96,165,250,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0 }}>💊</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:16,fontWeight:500,color:"rgba(255,255,255,0.9)" }}>{drugName||"Medicine"}</div>
+            <div style={{ fontSize:12,color:"rgba(255,255,255,0.4)" }}>{salt||drugCat}</div>
+          </div>
+          {isRx&&<span style={{ fontSize:11,padding:"2px 8px",borderRadius:6,background:"rgba(248,113,113,0.12)",color:"#f87171",border:"0.5px solid rgba(248,113,113,0.3)",fontWeight:700,flexShrink:0 }}>Rx</span>}
+        </div>
+        {salt        &&<div style={S.row(false)}><span style={S.rl}>Salt / molecule</span><span style={S.rv}>{salt}</span></div>}
+        {manufacturer&&<div style={S.row(false)}><span style={S.rl}>Manufacturer</span><span style={S.rv}>{manufacturer}</span></div>}
+        {drugCat     &&<div style={S.row(false)}><span style={S.rl}>Drug class</span><span style={S.rv}>{drugCat}</span></div>}
+        {(mfgDate||expDate)&&<div style={S.row(false)}><span style={S.rl}>Mfg / Exp</span><span style={S.rv}>{mfgDate&&`Mfg: ${mfgDate}`}{mfgDate&&expDate&&" · "}{expDate&&`Exp: ${expDate}`}</span></div>}
+        {mrp         &&<div style={S.row(true)}><span style={S.rl}>MRP</span><span style={S.rv}>{mrp}</span></div>}
+      </div>
+      {summary&&(
+        <div style={S.card}>
+          <div style={{ display:"flex",gap:6,marginBottom:10 }}>
+            <button onClick={()=>setLang("en")} style={S.lb(lang==="en")}>English</button>
+            <button onClick={()=>setLang("ta")} style={S.lb(lang==="ta")}>Tamil</button>
+          </div>
+          <p style={{ fontSize:14,lineHeight:1.7,color:"rgba(255,255,255,0.85)",margin:0 }}>{lang==="ta"?summaryTa:summary}</p>
+        </div>
+      )}
+      {uses.length>0&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Uses / Indications</span>
+          <div style={{ display:"flex",flexWrap:"wrap",gap:6 }}>
+            {uses.map((u,i)=><span key={i} style={{ fontSize:12,padding:"3px 10px",borderRadius:20,background:"rgba(96,165,250,0.1)",color:"#60a5fa",border:"0.5px solid rgba(96,165,250,0.25)",fontWeight:500 }}>{u}</span>)}
+          </div>
+        </div>
+      )}
+      <div style={S.card}>
+        <span style={S.lbl}>Dosage & How to Take</span>
+        {dosageAdult&&<div style={S.row(false)}><span style={S.rl}>Adults</span><span style={S.rv}>{dosageAdult}</span></div>}
+        {dosageChild&&<div style={S.row(false)}><span style={S.rl}>Children</span><span style={S.rv}>{dosageChild}</span></div>}
+        {!dosageAdult&&dosage&&<div style={S.row(false)}><span style={S.rl}>Dosage</span><span style={S.rv}>{dosage}</span></div>}
+        {whenToTake &&<div style={S.row(false)}><span style={S.rl}>When to take</span><span style={S.rv}>{whenToTake}</span></div>}
+        {howToTake  &&<div style={S.row(false)}><span style={S.rl}>How to take</span><span style={S.rv}>{howToTake}</span></div>}
+        {duration   &&<div style={S.row(true)}><span style={S.rl}>Duration</span><span style={S.rv}>{duration}</span></div>}
+        {!dosage&&!dosageAdult&&<div style={S.row(true)}><span style={S.rl}>Dosage</span><span style={S.rv}>Doctor prescription follow பண்ணுங்க</span></div>}
+      </div>
+      {sideEffects.length>0&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Side Effects</span>
+          {mildSE.length>0&&<>
+            <div style={{ fontSize:12,color:"rgba(255,255,255,0.35)",marginBottom:6 }}>Common — may not need attention</div>
+            <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginBottom:10 }}>
+              {mildSE.map((e,i)=><span key={i} style={{ fontSize:12,padding:"3px 10px",borderRadius:20,background:"rgba(251,191,36,0.1)",color:"#fbbf24",border:"0.5px solid rgba(251,191,36,0.25)",fontWeight:500 }}>{e}</span>)}
+            </div>
+          </>}
+          {seriousSE.length>0&&<>
+            <div style={{ fontSize:12,color:"rgba(255,255,255,0.35)",marginBottom:6 }}>Serious — stop and consult doctor</div>
+            <div style={{ display:"flex",flexWrap:"wrap",gap:6 }}>
+              {seriousSE.map((e,i)=><span key={i} style={{ fontSize:12,padding:"3px 10px",borderRadius:20,background:"rgba(248,113,113,0.1)",color:"#f87171",border:"0.5px solid rgba(248,113,113,0.25)",fontWeight:500 }}>{e}</span>)}
+            </div>
+          </>}
+        </div>
+      )}
+      {warnings.length>0&&(
+        <div style={S.cardD}>
+          <span style={{ ...S.lbl,color:"#f87171" }}>Warnings & Contraindications</span>
+          {warnings.map((w,i)=>(
+            <div key={i} style={{ display:"flex",alignItems:"flex-start",gap:8,padding:"5px 0",borderBottom:i<warnings.length-1?"0.5px solid rgba(239,68,68,0.1)":"none",fontSize:13,color:"#fca5a5" }}>
+              <span style={{ flexShrink:0,marginTop:1 }}>⚠</span><span style={{ lineHeight:1.5 }}>{w}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {interactions.length>0&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Drug Interactions</span>
+          {interactions.map((item,i)=>(
+            <div key={i} style={{ display:"flex",alignItems:"flex-start",gap:8,padding:"5px 0",borderBottom:i<interactions.length-1?"0.5px solid rgba(255,255,255,0.05)":"none",fontSize:13,color:"rgba(255,255,255,0.75)" }}>
+              <span style={{ flexShrink:0,color:"#fbbf24" }}>✕</span>
+              <span style={{ lineHeight:1.5 }}>{typeof item==="string"?item:`${item.drug} — ${item.effect}`}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={S.card}>
+        <span style={S.lbl}>Safety — Special Groups</span>
+        <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8 }}>
+          {populations.map((p,i)=>(
+            <div key={i} style={{ background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"7px 10px" }}>
+              <div style={{ fontSize:11,color:"rgba(255,255,255,0.35)",marginBottom:3 }}>{p.label}</div>
+              <div style={{ fontSize:12,fontWeight:600,color:p.ok===false?"#fbbf24":p.ok===true?"#34d399":"rgba(255,255,255,0.6)" }}>{p.val}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={S.card}>
+        <span style={S.lbl}>Storage & Handling</span>
+        <div style={S.row(false)}><span style={S.rl}>Store below</span><span style={S.rv}>30°C · Protect from light and moisture</span></div>
+        <div style={S.row(false)}><span style={S.rl}>Children</span><span style={S.rv}>Keep out of reach</span></div>
+        <div style={S.row(true)}><span style={S.rl}>Expired medicine</span><span style={S.rv}>Do not use — dispose safely</span></div>
+      </div>
+      <div style={S.cardW}>
+        <span style={{ ...S.lbl,color:"#fbbf24" }}>Missed Dose / Overdose</span>
+        <div style={{ display:"flex",alignItems:"flex-start",gap:8,padding:"5px 0",fontSize:13,color:"#fbbf24",borderBottom:"0.5px solid rgba(245,158,11,0.1)" }}>
+          <span style={{ flexShrink:0 }}>⏰</span><span><strong>Missed:</strong> Take as soon as remembered. If next dose is near, skip — do not double up.</span>
+        </div>
+        <div style={{ display:"flex",alignItems:"flex-start",gap:8,padding:"5px 0",fontSize:13,color:"#f87171" }}>
+          <span style={{ flexShrink:0 }}>🚨</span><span><strong>Overdose:</strong> Seek emergency care immediately — even without symptoms. Liver damage may appear 1–3 days later.</span>
+        </div>
+      </div>
+      {rec&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Doctor Advice</span>
+          <p style={{ fontSize:13,lineHeight:1.7,color:"rgba(255,255,255,0.82)",margin:0 }}>{rec}</p>
+        </div>
+      )}
+      {alternatives.length>0&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Alternatives / Similar Medicines</span>
+          <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginBottom:8 }}>
+            {alternatives.map((a,i)=><span key={i} style={{ fontSize:12,padding:"3px 10px",borderRadius:20,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.5)",border:"0.5px solid rgba(255,255,255,0.1)" }}>{a}</span>)}
+          </div>
+          <p style={{ fontSize:12,color:"rgba(255,255,255,0.3)",margin:0 }}>All contain the same active salt. Brand choice does not affect efficacy.</p>
+        </div>
+      )}
+      <div style={S.card}>
+        <span style={S.lbl}>💬 இதை கேளுங்க</span>
+        <div style={{ display:"flex",flexWrap:"wrap",gap:8 }}>
+          {followUps.map((p,i)=><button key={i} onClick={()=>onFollowUp&&onFollowUp(p)} style={S.fq}>{p} ↗</button>)}
+        </div>
+      </div>
+      <p style={{ fontSize:12,color:"rgba(255,255,255,0.25)",textAlign:"center",paddingTop:4 }}>⚕ {disclaimer}</p>
+    </div>
+  );
+}
+
+// ── MessageBubble ──────────────────────────────────────────────────────────────
+function MessageBubble({ msg, isLast, onFollowUp }) {
+  const isUser = msg.role === "user";
+  const [audioPlaying, setAudioPlaying] = useState(false);
+
+  const speakText = () => {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(msg.content.slice(0, 300));
+    utter.lang = "ta-IN";
+    utter.rate = 0.9;
+    setAudioPlaying(true);
+    utter.onend = () => setAudioPlaying(false);
+    window.speechSynthesis.speak(utter);
+  };
+
+  // ── 4. FIXED: determine which structured card to show ──────────────────────
+  const hasLabOrScan = msg.structured && (msg.fileMode === "lab" || msg.fileMode === "scan") && (msg.structured.findings || msg.structured.urgency);
+  const hasMedicine  = msg.structured && msg.fileMode === "medicine" && (msg.structured.uses || msg.structured.dosage || msg.structured.side_effects || msg.structured.sideEffects);
+  const isScan       = msg.fileMode === "scan";
+
+  return (
+    <div style={{
+      display: "flex", gap: 10, padding: "6px 0",
+      flexDirection: isUser ? "row-reverse" : "row",
+      alignItems: "flex-start",
+      animation: isLast ? "slideUp 0.3s ease" : "none"
+    }}>
+      {/* Avatar */}
+      <div style={{
+        width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        background: isUser
+          ? "linear-gradient(135deg, #6366f1, #8b5cf6)"
+          : "linear-gradient(135deg, #059669, #10b981)",
+        boxShadow: isUser ? "0 2px 8px rgba(99,102,241,0.4)" : "0 2px 8px rgba(16,185,129,0.35)"
+      }}>
+        {isUser ? <UserIcon /> : <BotIcon />}
+      </div>
+
+      {/* Bubble */}
+      <div style={{ maxWidth: "75%", minWidth: 80 }}>
+        {/* Upload preview chip */}
+        {msg.file && (
+          <div style={{
+            background: "rgba(255,255,255,0.06)", borderRadius: "12px 12px 0 0", padding: "8px 12px",
+            border: "1px solid rgba(255,255,255,0.1)", borderBottom: "none",
+            display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "rgba(255,255,255,0.6)"
+          }}>
+            <span style={{ fontSize: 18 }}>{msg.fileMode === "lab" ? "🧪" : msg.fileMode === "scan" ? "🩻" : "💊"}</span>
+            <span>{msg.file}</span>
+          </div>
+        )}
+
+        <div style={{
+          background: isUser
+            ? "linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.2))"
+            : "rgba(255,255,255,0.05)",
+          border: isUser
+            ? "1px solid rgba(99,102,241,0.35)"
+            : "1px solid rgba(255,255,255,0.08)",
+          borderRadius: msg.file
+            ? "0 12px 12px 12px"
+            : (isUser ? "16px 4px 16px 16px" : "4px 16px 16px 16px"),
+          padding: "11px 14px",
+        }}>
+          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: "rgba(255,255,255,0.88)", whiteSpace: "pre-wrap" }}>
+            {msg.content}
+          </p>
+
+          {/* ── Structured result cards (fixed routing) ── */}
+          {hasLabOrScan && !hasMedicine && (
+            isScan
+              ? <StructuredScanResult data={msg.structured} onFollowUp={onFollowUp} />
+              : <StructuredLabResult data={msg.structured} onFollowUp={onFollowUp} />
+          )}
+          {hasMedicine && (
+            <StructuredMedicineResult data={msg.structured} onFollowUp={onFollowUp} />
+          )}
+        </div>
+
+        {/* Listen / timestamp row */}
+        {!isUser && (
+          <div style={{ display: "flex", gap: 8, marginTop: 5, paddingLeft: 4 }}>
+            <button onClick={speakText} style={{
+              display: "flex", alignItems: "center", gap: 4, fontSize: 11,
+              color: audioPlaying ? "#10b981" : "rgba(255,255,255,0.35)",
+              background: "none", border: "none", cursor: "pointer", padding: "2px 6px", borderRadius: 4, transition: "color 0.2s"
+            }}>
+              {audioPlaying ? "🔊 Playing..." : "🔈 Listen (Tamil)"}
+            </button>
+            <span style={{ color: "rgba(255,255,255,0.15)", fontSize: 11 }}>
+              {new Date(msg.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TypingIndicator() {
+  return (
+    <div style={{ display: "flex", gap: 10, padding: "6px 0", alignItems: "flex-start" }}>
+      <div style={{ width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #059669, #10b981)" }}>
+        <BotIcon />
+      </div>
+      <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "4px 16px 16px 16px", padding: "14px 18px" }}>
+        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+          {[0, 1, 2].map(i => (
+            <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: "#10b981", animation: `bounce 1.2s ${i * 0.15}s infinite` }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UploadModal({ mode, onClose, onUpload }) {
+  const [dragging, setDragging] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const fileInputRef = useRef();
+
+  const modeConfig = {
+    lab:      { emoji: "🧪", title: "Lab Report Upload",  subtitle: "Blood test, urine test, sugar report",  color: "#60a5fa", accept: ".pdf,.jpg,.jpeg,.png" },
+    scan:     { emoji: "🩻", title: "X-Ray / Scan Upload", subtitle: "Chest X-ray, ultrasound, MRI scan",     color: "#a78bfa", accept: ".jpg,.jpeg,.png,.dicom" },
+    medicine: { emoji: "💊", title: "Medicine Photo",      subtitle: "Take a photo of medicine strip or box", color: "#34d399", accept: ".jpg,.jpeg,.png" },
+  }[mode];
+
+  const handleFile = (file) => setSelectedFile(file);
+  const handleDrop = (e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
+      <div style={{ background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 20, padding: 28, width: "100%", maxWidth: 400, animation: "slideUp 0.3s ease" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 28, marginBottom: 4 }}>{modeConfig.emoji}</div>
+            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "white" }}>{modeConfig.title}</h3>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>{modeConfig.subtitle}</p>
+          </div>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.08)", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <CloseIcon />
+          </button>
+        </div>
+
+        <div
+          onDragOver={e => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            border: `2px dashed ${dragging ? modeConfig.color : "rgba(255,255,255,0.15)"}`,
+            borderRadius: 14, padding: "30px 20px", textAlign: "center", cursor: "pointer",
+            background: dragging ? `${modeConfig.color}08` : "rgba(255,255,255,0.02)",
+            transition: "all 0.2s", marginBottom: 16
+          }}
+        >
+          <input ref={fileInputRef} type="file" accept={modeConfig.accept} style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
+          {selectedFile ? (
+            <>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>✅</div>
+              <p style={{ margin: 0, fontSize: 14, color: modeConfig.color, fontWeight: 600 }}>{selectedFile.name}</p>
+              <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>{(selectedFile.size / 1024).toFixed(0)} KB</p>
+            </>
+          ) : (
+            <>
+              <div style={{ color: "rgba(255,255,255,0.3)", marginBottom: 10 }}><UploadIcon /></div>
+              <p style={{ margin: 0, fontSize: 14, color: "rgba(255,255,255,0.5)" }}>Tap to upload or drag & drop</p>
+              <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.25)" }}>{modeConfig.accept}</p>
+            </>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.6)", fontSize: 14, cursor: "pointer" }}>
+            Cancel
+          </button>
+          <button
+            onClick={() => selectedFile && onUpload(selectedFile, mode)}
+            disabled={!selectedFile}
+            style={{
+              flex: 2, padding: "11px 0", borderRadius: 10, border: "none",
+              background: selectedFile ? `linear-gradient(135deg, ${modeConfig.color}, ${modeConfig.color}bb)` : "rgba(255,255,255,0.08)",
+              color: selectedFile ? "white" : "rgba(255,255,255,0.3)", fontSize: 14, fontWeight: 600,
+              cursor: selectedFile ? "pointer" : "default", transition: "all 0.2s"
+            }}
+          >
+            Analyze {modeConfig.emoji}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OTPModal({ onSuccess, onClose }) {
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [step, setStep] = useState("phone");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [devMode, setDevMode] = useState(false);
+
+  const sendOTP = async () => {
+    if (phone.length !== 10) { setError("Valid 10-digit number போடு"); return; }
+    setLoading(true); setError("");
+    try {
+      const res = await apiSendOtp(phone);
+      setDevMode(!!res.dev_mode);
+      setStep("otp");
+    } catch (e) {
+      setError(e.message || "OTP send failed. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendOTP = async () => {
+    setLoading(true); setError("");
+    try {
+      const res = await apiResendOtp(phone);
+      setDevMode(!!res.dev_mode);
+      setError("OTP resent ✓");
+    } catch (e) {
+      setError(e.message || "Resend failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOTP = async () => {
+    if (otp.length !== 6) { setError("6-digit OTP போடு"); return; }
+    setLoading(true); setError("");
+    try {
+      const res = await apiVerifyOtp(phone, otp);
+      setStep("success");
+      setTimeout(() => onSuccess({ phone, prompts: res.prompts }), 1200);
+    } catch (e) {
+      setError(e.message || "Wrong OTP. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+      <div style={{ background: "#0f1117", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 24, padding: 32, width: "100%", maxWidth: 360, animation: "slideUp 0.4s ease" }}>
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{ width: 56, height: 56, borderRadius: 16, background: "linear-gradient(135deg, #059669, #10b981)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", boxShadow: "0 8px 24px rgba(16,185,129,0.3)" }}>
+            <HeartIcon />
+          </div>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "white" }}>Anbu Health AI</h2>
+          <p style={{ margin: "6px 0 0", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>Tamil Nadu Village Healthcare</p>
+        </div>
+
+        {step === "success" ? (
+          <div style={{ textAlign: "center", padding: "20px 0" }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
+            <p style={{ margin: 0, fontSize: 16, color: "#10b981", fontWeight: 700 }}>Login Success!</p>
+            <p style={{ margin: "6px 0 0", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>Welcome to Anbu Health AI</p>
+          </div>
+        ) : step === "phone" ? (
+          <>
+            <p style={{ margin: "0 0 16px", fontSize: 14, color: "rgba(255,255,255,0.6)", textAlign: "center" }}>Phone number போடு — OTP வரும்</p>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <div style={{ padding: "13px 12px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, fontSize: 14, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 4 }}>
+                <PhoneIcon /> +91
+              </div>
+              <input
+                type="tel" maxLength={10} value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, ""))}
+                placeholder="98765 43210"
+                style={{ flex: 1, padding: "13px 14px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, fontSize: 16, color: "white", outline: "none", letterSpacing: 2 }}
+              />
+            </div>
+            {error && <p style={{ margin: "0 0 10px", fontSize: 12, color: "#ef4444", textAlign: "center" }}>{error}</p>}
+            <button onClick={sendOTP} disabled={loading || phone.length !== 10} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", background: phone.length === 10 ? "linear-gradient(135deg, #059669, #10b981)" : "rgba(255,255,255,0.07)", color: phone.length === 10 ? "white" : "rgba(255,255,255,0.3)", fontSize: 15, fontWeight: 700, cursor: phone.length === 10 ? "pointer" : "default", transition: "all 0.2s" }}>
+              {loading ? "Sending..." : "OTP அனுப்பு →"}
+            </button>
+          </>
+        ) : (
+          <>
+            <p style={{ margin: "0 0 6px", fontSize: 14, color: "rgba(255,255,255,0.6)", textAlign: "center" }}>+91 {phone} க்கு OTP வந்தது</p>
+            {devMode && <p style={{ margin: "0 0 16px", fontSize: 12, color: "rgba(255,255,255,0.3)", textAlign: "center" }}>(Dev mode — check server logs for the OTP, or enter any 6 digits)</p>}
+            <input
+              type="tel" maxLength={6} value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, ""))}
+              placeholder="• • • • • •"
+              style={{ width: "100%", padding: "16px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, fontSize: 24, color: "white", outline: "none", letterSpacing: 12, textAlign: "center", boxSizing: "border-box", marginBottom: 12 }}
+            />
+            {error && <p style={{ margin: "0 0 10px", fontSize: 12, color: error.includes("✓") ? "#10b981" : "#ef4444", textAlign: "center" }}>{error}</p>}
+            <button onClick={verifyOTP} disabled={loading || otp.length !== 6} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", background: otp.length === 6 ? "linear-gradient(135deg, #059669, #10b981)" : "rgba(255,255,255,0.07)", color: otp.length === 6 ? "white" : "rgba(255,255,255,0.3)", fontSize: 15, fontWeight: 700, cursor: otp.length === 6 ? "pointer" : "default", transition: "all 0.2s" }}>
+              {loading ? "Verifying..." : "Verify ✓"}
+            </button>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+              <button onClick={() => setStep("phone")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "none", color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer" }}>← Change number</button>
+              <button onClick={resendOTP} disabled={loading} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "none", color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer" }}>Resend OTP</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCount, onClose, visible }) {
+  return (
+    <>
+      {visible && <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40 }} />}
+      <div style={{
+        position: "fixed", left: 0, top: 0, height: "100%", width: 260,
+        background: "#0d1117", borderRight: "1px solid rgba(255,255,255,0.07)",
+        display: "flex", flexDirection: "column", zIndex: 50,
+        transform: visible ? "translateX(0)" : "translateX(-100%)",
+        transition: "transform 0.3s cubic-bezier(0.4,0,0.2,1)"
+      }}>
+        <div style={{ padding: "20px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #059669, #10b981)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <HeartIcon />
+            </div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "white" }}>Anbu Health AI</div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>Medical Assistant</div>
+            </div>
+          </div>
+          <button onClick={onNewChat} style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.7)", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit", transition: "background 0.15s" }}>
+            <NewChatIcon /> New Chat
+          </button>
+        </div>
+
+        <div style={{ padding: "10px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Today's prompts</span>
+            <span style={{ fontSize: 11, color: promptCount >= MAX_PROMPTS ? "#ef4444" : "#10b981", fontWeight: 600 }}>{promptCount}/{MAX_PROMPTS}</span>
+          </div>
+          <div style={{ height: 4, background: "rgba(255,255,255,0.08)", borderRadius: 2, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${Math.min((promptCount / MAX_PROMPTS) * 100, 100)}%`, background: promptCount >= MAX_PROMPTS ? "#ef4444" : "linear-gradient(90deg, #059669, #10b981)", borderRadius: 2, transition: "width 0.3s" }} />
+          </div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "8px 8px" }}>
+          <p style={{ margin: "8px 8px 6px", fontSize: 10, color: "rgba(255,255,255,0.25)", textTransform: "uppercase", letterSpacing: 1 }}>Recent Chats</p>
+          {chats.map(chat => (
+            <button key={chat.id} onClick={() => { onSelectChat(chat.id); onClose(); }} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "none", background: chat.id === activeChatId ? "rgba(16,185,129,0.12)" : "none", color: chat.id === activeChatId ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.5)", fontSize: 13, cursor: "pointer", textAlign: "left", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8, marginBottom: 2, transition: "all 0.15s" }}>
+              <HistoryIcon />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{chat.title}</span>
+            </button>
+          ))}
+        </div>
+
+        {user && (
+          <div style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <UserIcon />
+            </div>
+            <div>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>+91 {user.phone}</div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>Verified ✓</div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function WelcomeScreen({ onQuickPrompt }) {
+  const suggestions = [
+    { icon: "🩸", text: "Sugar test result explain பண்ணு" },
+    { icon: "💊", text: "Paracetamol dosage என்ன?" },
+    { icon: "❤️", text: "BP high-ஆ இருக்கு, என்ன சாப்பிடணும்?" },
+    { icon: "🤒", text: "Fever 3 days-ஆ இருக்கு, என்ன பண்றது?" },
+  ];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, padding: "20px 20px 0", textAlign: "center" }}>
+      <div style={{ width: 64, height: 64, borderRadius: 20, background: "linear-gradient(135deg, #059669, #10b981)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18, boxShadow: "0 12px 32px rgba(16,185,129,0.3)", animation: "pulse 2.5s infinite" }}>
+        <span style={{ fontSize: 32 }}>🏥</span>
+      </div>
+      <h1 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 800, color: "white" }}>Anbu Health AI</h1>
+      <p style={{ margin: "0 0 6px", fontSize: 14, color: "rgba(255,255,255,0.5)", maxWidth: 300, lineHeight: 1.6 }}>
+        Tamil Nadu village patients-க்கான AI medical assistant
+      </p>
+      <p style={{ margin: "0 0 28px", fontSize: 12, color: "rgba(255,255,255,0.25)" }}>Lab reports • X-Rays • Medicine info • Health questions</p>
+
+      <div style={{ width: "100%", maxWidth: 500 }}>
+        <p style={{ margin: "0 0 10px", fontSize: 11, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: 1 }}>இதை கேளுங்க</p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {suggestions.map((s, i) => (
+            <button key={i} onClick={() => onQuickPrompt(s.text)} style={{
+              padding: "11px 12px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.1)",
+              background: "rgba(255,255,255,0.03)", color: "rgba(255,255,255,0.6)", fontSize: 12, lineHeight: 1.5,
+              cursor: "pointer", textAlign: "left", fontFamily: "inherit", transition: "all 0.2s",
+              display: "flex", alignItems: "flex-start", gap: 8
+            }}>
+              <span>{s.icon}</span><span>{s.text}</span>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
 // ── Main App ───────────────────────────────────────────────────────────────────
-export default function App() {
-  // ── Auth state ────────────────────────────────────────────────────────────────
-  const [authenticated, setAuthenticated] = useState(() => {
-    const phone = localStorage.getItem("anbu_phone");
-    const token = localStorage.getItem("anbu_widget_token");
-    return !!(phone || token);
-  });
-  const [authUser, setAuthUser] = useState(() => ({
-    phone: localStorage.getItem("anbu_phone") || "",
-    prompts: null,
-  }));
-
-  // ── Chat state ────────────────────────────────────────────────────────────────
-  const [messages, setMessages]       = useState([]);
-  const [input, setInput]             = useState("");
-  const [loading, setLoading]         = useState(false);
-  const [uploadedFile, setUploadedFile] = useState(null);
-  const [uploadPreview, setUploadPreview] = useState(null);
-  const [mode, setMode]               = useState("general");
-  const [chatId]                      = useState(() => crypto.randomUUID());
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyMsgs, setHistoryMsgs] = useState([]);
-  const [promptCount, setPromptCount] = useState(() => getPromptData().count);
-  const [limitReached, setLimitReached] = useState(false);
-  const [serverPrompts, setServerPrompts] = useState(null);
-  const bottomRef   = useRef(null);
-  const inputRef    = useRef(null);
-  const fileInputRef = useRef(null);
-  const recognitionRef = useRef(null);
+export default function AnbuHealthAI() {
+  const [user, setUser] = useState(null);
+  const [showOTP, setShowOTP] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadMode, setUploadMode] = useState(null);
+  const [showPlusMenu, setShowPlusMenu] = useState(false);
+  const [inputText, setInputText] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [promptCount, setPromptCount] = useState(() => getPromptData().count);
+  const [pendingFile, setPendingFile] = useState(null);
+  const [pendingMode, setPendingMode] = useState(null);
 
-  // Scroll to bottom
+  const [chats, setChats] = useState([{ id: "c1", title: "New Chat", messages: [] }]);
+  const [activeChatId, setActiveChatId] = useState("c1");
+
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const handleSendRef = useRef(null);
+
+  const activeChat = chats.find(c => c.id === activeChatId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const messages = useMemo(() => activeChat?.messages || [], [activeChatId, chats]);
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
 
-  // Load history on auth
+  // Speech Recognition setup
   useEffect(() => {
-    if (!authenticated || !authUser.phone) return;
-    apiUserHistory(authUser.phone).then(msgs => {
-      if (msgs.length > 0) setHistoryMsgs(msgs);
-    }).catch(() => {});
-    apiUserStatus(authUser.phone).then(s => {
-      if (s) setServerPrompts(s);
-    }).catch(() => {});
-  }, [authenticated, authUser.phone]);
-
-  const handleAuthenticated = useCallback(({ phone, prompts }) => {
-    setAuthUser({ phone, prompts });
-    setAuthenticated(true);
-    if (prompts) setServerPrompts(prompts);
-  }, []);
-
-  const handleLogout = useCallback(() => {
-    localStorage.removeItem("anbu_phone");
-    localStorage.removeItem("anbu_widget_token");
-    setAuthenticated(false);
-    setAuthUser({ phone: "", prompts: null });
-    setMessages([]);
-    setHistoryMsgs([]);
-  }, []);
-
-  // ── File upload ────────────────────────────────────────────────────────────────
-  const handleFileChange = useCallback((e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadedFile(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => setUploadPreview(ev.target.result);
-    reader.readAsDataURL(file);
-  }, []);
-
-  const removeFile = useCallback(() => {
-    setUploadedFile(null);
-    setUploadPreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }, []);
-
-  // ── Voice input ────────────────────────────────────────────────────────────────
-  const toggleVoice = useCallback(() => {
-    if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
-      alert("Voice not supported in this browser.");
-      return;
-    }
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-      return;
-    }
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const rec = new SpeechRecognition();
-    rec.lang = "ta-IN";
-    rec.continuous = false;
-    rec.interimResults = false;
-    rec.onresult = (e) => {
-      const txt = e.results[0][0].transcript;
-      setInput(prev => prev + (prev ? " " : "") + txt);
-    };
-    rec.onerror = () => setIsListening(false);
-    rec.onend   = () => setIsListening(false);
-    recognitionRef.current = rec;
-    rec.start();
-    setIsListening(true);
-  }, [isListening]);
-
-  // ── Send message ───────────────────────────────────────────────────────────────
-  const sendMessage = useCallback(async (text) => {
-    const trimmed = (text || input).trim();
-    if (!trimmed && !uploadedFile) return;
-
-    // Check prompt limits
-    const effective = serverPrompts || { count: promptCount, remaining: MAX_PROMPTS - promptCount, limit: MAX_PROMPTS, allowed: promptCount < MAX_PROMPTS };
-    if (!effective.allowed && effective.remaining <= 0) {
-      setLimitReached(true);
-      return;
+    if (SpeechRecognition) {
+      const rec = new SpeechRecognition();
+      rec.lang = "ta-IN";
+      rec.continuous = false;
+      rec.interimResults = false;
+      rec.onend = () => setIsListening(false);
+      rec.onerror = () => setIsListening(false);
+      recognitionRef.current = rec;
     }
+  }, []);
 
+  const addMessage = useCallback((chatId, msg) => {
+    setChats(prev => prev.map(c => c.id === chatId ? {
+      ...c,
+      title: c.messages.length === 0 ? (msg.content?.slice(0, 30) || "Chat") + "..." : c.title,
+      messages: [...c.messages, msg]
+    } : c));
+  }, []);
+
+  const handleSend = useCallback(async (textOverride) => {
+    const text = (typeof textOverride === "string" ? textOverride : inputText).trim();
+    if (!text && !pendingFile) return;
+    if (promptCount >= MAX_PROMPTS) return;
+
+    const msgText = text || (pendingFile ? `${pendingFile.name} analyze பண்ணு` : "");
     const userMsg = {
-      role: "user",
-      content: trimmed,
-      image: uploadPreview,
-      mode,
-      ts: Date.now(),
+      id: Date.now(), role: "user", content: msgText,
+      file: pendingFile?.name, fileMode: pendingMode,
+      timestamp: Date.now()
     };
-    setMessages(prev => [...prev, userMsg]);
-    setInput("");
-    setLoading(true);
-    const fileToSend = uploadedFile;
-    removeFile();
+
+    // Capture before clearing
+    const fileForAPI = pendingFile;
+    const modeForAPI = pendingMode;
+    const phone = user?.phone || null;
+
+    addMessage(activeChatId, userMsg);
+    setInputText("");
+    setPendingFile(null);
+    setPendingMode(null);
+    setIsLoading(true);
+
+    // Server-side count when logged in; localStorage fallback only without phone
+    if (!phone) {
+      const localCount = incrementPrompt();
+      setPromptCount(localCount);
+    }
 
     try {
-      const result = await callAnbuAPI(trimmed, fileToSend, mode, authUser.phone, chatId);
-      const count = incrementPrompt();
-      setPromptCount(count);
-      if (result.prompts) setServerPrompts(result.prompts);
-
-      setMessages(prev => [...prev, {
-        role: "assistant",
+      const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId);
+      const botMsg = {
+        id: Date.now() + 1, role: "assistant",
         content: result.answer,
         structured: result.structured,
-        mode: result.mode,
-        ts: Date.now(),
-      }]);
-    } catch (err) {
-      if (err.message === "DAILY_LIMIT") {
-        setLimitReached(true);
+        fileMode: modeForAPI,
+        timestamp: Date.now()
+      };
+      addMessage(activeChatId, botMsg);
+      // Server-side count (Supabase) is authoritative when available
+      if (result.prompts && typeof result.prompts.count === "number") {
+        setPromptCount(result.prompts.count);
+      }
+    } catch (e) {
+      if (e.message === "DAILY_LIMIT") {
+        if (e.prompts && typeof e.prompts.count === "number") setPromptCount(e.prompts.count);
+        else setPromptCount(MAX_PROMPTS);
+        addMessage(activeChatId, {
+          id: Date.now() + 1, role: "assistant",
+          content: e.message_ta || "Today's 20 prompts முடிந்தது. நாளைக்கு வா! (Resets at midnight)",
+          timestamp: Date.now()
+        });
       } else {
-        setMessages(prev => [...prev, {
-          role: "assistant",
-          content: "❌ " + err.message,
-          ts: Date.now(),
-        }]);
+        addMessage(activeChatId, { id: Date.now() + 1, role: "assistant", content: "Sorry, error ஆச்சு. Try again.", timestamp: Date.now() });
       }
     } finally {
-      setLoading(false);
-      inputRef.current?.focus();
+      setIsLoading(false);
     }
-  }, [input, uploadedFile, uploadPreview, mode, authUser.phone, chatId, promptCount, serverPrompts, removeFile]);
+  }, [inputText, pendingFile, pendingMode, promptCount, activeChatId, addMessage, user]);
 
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
+  // Keep ref always pointing to latest handleSend (fixes voice stale closure)
+  handleSendRef.current = handleSend;
+
+  const handleUpload = (file, mode) => {
+    setPendingFile(file);
+    setPendingMode(mode);
+    setShowUploadModal(false);
+    inputRef.current?.focus();
+  };
+
+  // ── 5. FIXED handleVoice — auto-submits after speech ─────────────────────
+  const handleVoice = () => {
+    if (!recognitionRef.current) { alert("Voice not supported in this browser"); return; }
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      recognitionRef.current.onresult = (e) => {
+        const transcript = e.results[0][0].transcript;
+        setInputText(transcript);
+        setIsListening(false);
+        // Use ref — always calls latest handleSend, avoids stale closure
+        setTimeout(() => handleSendRef.current(transcript), 300);
+      };
+      recognitionRef.current.start();
+      setIsListening(true);
     }
-  }, [sendMessage]);
+  };
 
-  // Prompt info
-  const promptInfo = useMemo(() => {
-    if (serverPrompts) return serverPrompts;
-    const count = promptCount;
-    return { count, remaining: MAX_PROMPTS - count, limit: MAX_PROMPTS, allowed: count < MAX_PROMPTS };
-  }, [serverPrompts, promptCount]);
+  const handleNewChat = () => {
+    const newId = `c${Date.now()}`;
+    setChats(prev => [{ id: newId, title: "New Chat", messages: [] }, ...prev]);
+    setActiveChatId(newId);
+    setSidebarOpen(false);
+  };
 
-  // ── If not authenticated — show MSG91 widget ──────────────────────────────────
-  if (!authenticated) {
-    return <OtpWidgetScreen onAuthenticated={handleAuthenticated} />;
-  }
+  // ── Login success — sync server prompt count + load Supabase chat history ──
+  const handleLoginSuccess = useCallback(async (u) => {
+    setUser(u);
+    setShowOTP(false);
 
-  // ── Main Chat UI ───────────────────────────────────────────────────────────────
-  const modeOptions = [
-    { value: "general", label: "💬 General", icon: <BotIcon /> },
-    { value: "lab",     label: "🔬 Lab",     icon: <LabIcon /> },
-    { value: "scan",    label: "🫀 Scan",    icon: <ScanIcon /> },
-    { value: "medicine",label: "💊 Medicine",icon: <PillIcon /> },
+    if (u?.prompts && typeof u.prompts.count === "number") {
+      setPromptCount(u.prompts.count);
+    } else {
+      try {
+        const status = await apiUserStatus(u.phone);
+        if (status && typeof status.count === "number") setPromptCount(status.count);
+      } catch { /* localStorage fallback stays */ }
+    }
+
+    try {
+      const history = await apiUserHistory(u.phone);
+      if (history.length > 0) {
+        // Group flat history into chats by chat_id (fallback: one chat)
+        const grouped = {};
+        history.forEach((m, i) => {
+          const cid = m.chat_id || "history";
+          if (!grouped[cid]) grouped[cid] = [];
+          grouped[cid].push({
+            id: m.id || `${cid}_${i}`,
+            role: m.role,
+            content: m.content,
+            structured: m.structured || null,
+            fileMode: m.mode,
+            timestamp: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
+          });
+        });
+        const restoredChats = Object.entries(grouped).map(([cid, msgs], idx) => ({
+          id: cid,
+          title: (msgs[0]?.content || "Chat").slice(0, 30) + "...",
+          messages: msgs,
+        }));
+        setChats(prev => [...restoredChats, ...prev]);
+        setActiveChatId(restoredChats[0].id);
+      }
+    } catch (e) {
+      // Supabase not configured or history fetch failed — not fatal
+    }
+  }, []);
+
+  const plusMenuItems = [
+    { icon: <LabIcon />,  label: "Lab Report",   sublabel: "Blood test, sugar, urine",  color: "#60a5fa", mode: "lab" },
+    { icon: <ScanIcon />, label: "X-Ray / Scan",  sublabel: "Chest, abdomen, MRI",       color: "#a78bfa", mode: "scan" },
+    { icon: <PillIcon />, label: "Medicine",      sublabel: "Photo of medicine strip",   color: "#34d399", mode: "medicine" },
   ];
 
   return (
-    <div style={{
-      height: "100dvh",
-      display: "flex",
-      flexDirection: "column",
-      background: "radial-gradient(ellipse 80% 60% at 50% -10%, rgba(34,197,94,0.08), transparent), #0a0a0a",
-      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-      color: "#fff",
-      overflow: "hidden",
-    }}>
-      {/* ── Header ── */}
-      <header style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "12px 20px",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
-        background: "rgba(0,0,0,0.4)",
-        backdropFilter: "blur(12px)",
-        flexShrink: 0,
-        gap: 12,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: "linear-gradient(135deg,#22c55e,#16a34a)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0,
-          }}>
-            <HeartIcon />
-          </div>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.2 }}>Anbu Health AI</div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>Tamil Nadu Village Healthcare</div>
-          </div>
-        </div>
+    <div style={{ height: "100vh", background: "#0f1117", display: "flex", flexDirection: "column", fontFamily: "'Segoe UI', system-ui, sans-serif", overflow: "hidden", position: "relative" }}>
+      <style>{`
+        @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }
+        @keyframes pulse { 0%, 100% { box-shadow: 0 12px 32px rgba(16,185,129,0.3); } 50% { box-shadow: 0 12px 48px rgba(16,185,129,0.55); } }
+        * { box-sizing: border-box; }
+        input, button { font-family: inherit; }
+        textarea:focus { outline: none; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+      `}</style>
 
+      {showOTP && <OTPModal onSuccess={handleLoginSuccess} onClose={() => setShowOTP(false)} />}
+
+      <Sidebar
+        visible={sidebarOpen} onClose={() => setSidebarOpen(false)}
+        chats={chats} activeChatId={activeChatId}
+        onNewChat={handleNewChat} onSelectChat={setActiveChatId}
+        user={user} promptCount={promptCount}
+      />
+
+      {showUploadModal && <UploadModal mode={uploadMode} onClose={() => setShowUploadModal(false)} onUpload={handleUpload} />}
+
+      {showPlusMenu && <div onClick={() => setShowPlusMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 20 }} />}
+
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.07)", background: "#0f1117", flexShrink: 0 }}>
+        <button onClick={() => setSidebarOpen(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: 8, borderRadius: 8, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center" }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
+        </button>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {/* Prompt counter */}
-          <div style={{
-            fontSize: 11,
-            color: promptInfo.remaining <= 3 ? "#f87171" : "rgba(255,255,255,0.4)",
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 8,
-            padding: "4px 10px",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-          }}>
-            <span style={{ opacity: 0.6 }}>💬</span>
-            <span>{promptInfo.remaining}/{promptInfo.limit} remaining</span>
-          </div>
-
-          {/* History */}
-          <button
-            id="btn-history"
-            onClick={() => setHistoryOpen(v => !v)}
-            title="Chat History"
-            style={{
-              background: historyOpen ? "rgba(34,197,94,0.15)" : "rgba(255,255,255,0.05)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 8, color: "#fff", padding: "6px 10px",
-              cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: 12,
-            }}
-          >
-            <HistoryIcon />
-          </button>
-
-          {/* Phone display + logout */}
-          {authUser.phone && (
-            <div style={{
-              display: "flex", alignItems: "center", gap: 6,
-              background: "rgba(34,197,94,0.08)",
-              border: "1px solid rgba(34,197,94,0.2)",
-              borderRadius: 8, padding: "5px 10px",
-            }}>
-              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.6)" }}>
-                +91 {authUser.phone.replace(/^91/, "")}
-              </span>
-            </div>
-          )}
-          <button
-            id="btn-logout"
-            onClick={handleLogout}
-            title="Logout"
-            style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 8, color: "rgba(255,255,255,0.5)",
-              padding: "6px 8px", cursor: "pointer",
-              display: "flex", alignItems: "center",
-            }}
-          >
-            <LogoutIcon />
-          </button>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg, #059669, #10b981)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>🏥</div>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "white" }}>Anbu Health AI</span>
         </div>
-      </header>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 20, padding: "4px 10px" }}>
+          <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
+          <span style={{ fontSize: 11, color: "#10b981", fontWeight: 600 }}>Live</span>
+        </div>
+      </div>
 
-      {/* ── History Panel ── */}
-      {historyOpen && (
-        <div style={{
-          position: "absolute", top: 65, right: 16, zIndex: 100,
-          width: 320, maxHeight: 400,
-          background: "rgba(18,18,18,0.97)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 14, overflow: "hidden",
-          boxShadow: "0 20px 40px rgba(0,0,0,0.6)",
-          backdropFilter: "blur(12px)",
-        }}>
-          <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Chat History</span>
-            <button onClick={() => setHistoryOpen(false)} style={{ background:"none",border:"none",color:"rgba(255,255,255,0.4)",cursor:"pointer" }}><CloseIcon /></button>
-          </div>
-          <div style={{ overflowY:"auto", maxHeight: 340, padding: "8px 0" }}>
-            {historyMsgs.length === 0 ? (
-              <p style={{ color:"rgba(255,255,255,0.3)",fontSize:13,textAlign:"center",padding:"20px 16px" }}>No history yet</p>
-            ) : historyMsgs.map((m, i) => (
-              <div key={i} onClick={() => { setInput(m.question || ""); setHistoryOpen(false); inputRef.current?.focus(); }}
-                style={{ padding:"10px 16px",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.04)" }}
-                onMouseEnter={e => e.currentTarget.style.background="rgba(255,255,255,0.04)"}
-                onMouseLeave={e => e.currentTarget.style.background=""}
-              >
-                <div style={{ fontSize:13,color:"rgba(255,255,255,0.8)",marginBottom:2 }}>{m.question}</div>
-                <div style={{ fontSize:11,color:"rgba(255,255,255,0.3)" }}>{new Date(m.timestamp).toLocaleString("ta-IN")}</div>
-              </div>
-            ))}
+      {/* Messages */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px 16px 8px" }}>
+        <div style={{ maxWidth: 680, margin: "0 auto" }}>
+          {messages.length === 0 ? (
+            <WelcomeScreen onQuickPrompt={(text) => { setInputText(text); setTimeout(() => handleSend(text), 100); }} />
+          ) : (
+            <>
+              {messages.map((msg, i) => (
+                <MessageBubble key={msg.id} msg={msg} isLast={i === messages.length - 1} onFollowUp={(text) => { setInputText(text); setTimeout(() => handleSend(text), 100); }} />
+              ))}
+              {isLoading && <TypingIndicator />}
+            </>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+
+      {/* Pending file chip */}
+      {pendingFile && (
+        <div style={{ padding: "0 16px 8px", maxWidth: 696, margin: "0 auto", width: "100%" }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: 20, padding: "5px 12px" }}>
+            <span style={{ fontSize: 13 }}>{pendingMode === "lab" ? "🧪" : pendingMode === "scan" ? "🩻" : "💊"}</span>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>{pendingFile.name}</span>
+            <button onClick={() => { setPendingFile(null); setPendingMode(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.4)", padding: 0, display: "flex" }}><CloseIcon /></button>
           </div>
         </div>
       )}
 
-      {/* ── Mode Selector ── */}
-      <div style={{
-        display: "flex", gap: 6, padding: "8px 16px",
-        borderBottom: "1px solid rgba(255,255,255,0.05)",
-        flexShrink: 0, overflowX: "auto",
-        scrollbarWidth: "none",
-      }}>
-        {modeOptions.map(opt => (
-          <button
-            key={opt.value}
-            id={`mode-${opt.value}`}
-            onClick={() => setMode(opt.value)}
-            style={{
-              display: "flex", alignItems: "center", gap: 5,
-              padding: "5px 12px",
-              borderRadius: 8,
-              fontSize: 12, fontWeight: 500,
-              cursor: "pointer",
-              border: mode === opt.value
-                ? "1px solid rgba(34,197,94,0.4)"
-                : "1px solid rgba(255,255,255,0.07)",
-              background: mode === opt.value
-                ? "rgba(34,197,94,0.12)"
-                : "rgba(255,255,255,0.04)",
-              color: mode === opt.value ? "#4ade80" : "rgba(255,255,255,0.5)",
-              transition: "all 0.15s",
-              whiteSpace: "nowrap",
-              flexShrink: 0,
-            }}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Messages ── */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px", scrollbarWidth: "thin" }}>
-        {messages.length === 0 && (
-          <div style={{ textAlign: "center", padding: "60px 20px" }}>
-            <div style={{
-              width: 56, height: 56, borderRadius: 16,
-              background: "linear-gradient(135deg,#22c55e,#16a34a)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              margin: "0 auto 16px",
-            }}>
-              <HeartIcon />
-            </div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 8px" }}>Vanakkam! 🙏</h2>
-            <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 14, maxWidth: 320, margin: "0 auto 24px" }}>
-              உங்கள் உடல் நலம் பத்தி கேளுங்க. Lab reports, scans, medicines — எதுவும் கேட்கலாம்.
-            </p>
-            <div style={{ display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",maxWidth:400,margin:"0 auto" }}>
-              {["என் blood sugar அதிகமா இருக்கா?","Lab report explain பண்ணுங்க","இந்த மாத்திரை safe-ஆ?","Chest scan result என்ன?"].map((q,i)=>(
-                <button key={i} onClick={()=>sendMessage(q)} style={{
-                  padding:"8px 14px",borderRadius:10,fontSize:12,
-                  border:"1px solid rgba(34,197,94,0.2)",
-                  background:"rgba(34,197,94,0.06)",
-                  color:"rgba(255,255,255,0.65)",
-                  cursor:"pointer",fontFamily:"inherit",
-                }}>{q}</button>
-              ))}
-            </div>
+      {/* Prompt limit warning */}
+      {promptCount >= MAX_PROMPTS && (
+        <div style={{ padding: "8px 16px", maxWidth: 696, margin: "0 auto", width: "100%" }}>
+          <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, padding: "8px 14px", fontSize: 12, color: "#fca5a5", textAlign: "center" }}>
+            ⚠️ Today's 20 prompts மொத்தமும் use ஆயிட்டு. நாளைக்கு வா! (Resets at midnight)
           </div>
-        )}
+        </div>
+      )}
 
-        {messages.map((msg, idx) => (
-          <div key={idx} style={{
-            display: "flex",
-            justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
-            marginBottom: 12,
-            animation: "fadeIn 0.2s ease",
-          }}>
-            {msg.role === "assistant" && (
-              <div style={{
-                width: 28, height: 28, borderRadius: 8, flexShrink: 0, marginRight: 8, marginTop: 2,
-                background: "linear-gradient(135deg,#22c55e,#16a34a)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <BotIcon />
-              </div>
-            )}
-            <div style={{
-              maxWidth: msg.structured ? "100%" : "78%",
-              background: msg.role === "user"
-                ? "linear-gradient(135deg,#22c55e,#16a34a)"
-                : "rgba(255,255,255,0.05)",
-              border: msg.role === "user" ? "none" : "1px solid rgba(255,255,255,0.07)",
-              borderRadius: msg.role === "user" ? "16px 16px 4px 16px" : "4px 16px 16px 16px",
-              padding: "10px 14px",
-              fontSize: 14, lineHeight: 1.65,
-              color: msg.role === "user" ? "#fff" : "rgba(255,255,255,0.88)",
-            }}>
-              {msg.image && (
-                <img src={msg.image} alt="uploaded" style={{
-                  width: "100%", maxWidth: 200, borderRadius: 8, marginBottom: 8, display: "block",
-                }} />
-              )}
-              <div style={{ whiteSpace: "pre-wrap" }}>{msg.content}</div>
-              {msg.structured && <StructuredLabResult data={msg.structured} onFollowUp={sendMessage} />}
-            </div>
-            {msg.role === "user" && (
-              <div style={{
-                width: 28, height: 28, borderRadius: 8, flexShrink: 0, marginLeft: 8, marginTop: 2,
-                background: "rgba(255,255,255,0.08)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <UserIcon />
-              </div>
-            )}
-          </div>
-        ))}
+      {/* Input Area */}
+      <div style={{ padding: "8px 16px 16px", flexShrink: 0, maxWidth: 696, margin: "0 auto", width: "100%" }}>
+        <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 16, display: "flex", alignItems: "flex-end", gap: 4, padding: "10px 12px" }}>
 
-        {loading && (
-          <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:12 }}>
-            <div style={{ width:28,height:28,borderRadius:8,background:"linear-gradient(135deg,#22c55e,#16a34a)",display:"flex",alignItems:"center",justifyContent:"center" }}><BotIcon /></div>
-            <div style={{ display:"flex",gap:4,alignItems:"center",padding:"10px 14px",background:"rgba(255,255,255,0.05)",borderRadius:"4px 16px 16px 16px",border:"1px solid rgba(255,255,255,0.07)" }}>
-              {[0,1,2].map(i=>(
-                <div key={i} style={{ width:6,height:6,borderRadius:"50%",background:"#22c55e",animation:`bounce 1s ease ${i*0.2}s infinite` }} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {limitReached && (
-          <div style={{ textAlign:"center",padding:"20px",background:"rgba(239,68,68,0.06)",border:"1px solid rgba(239,68,68,0.15)",borderRadius:12,margin:"8px 0" }}>
-            <p style={{ color:"#f87171",margin:"0 0 4px",fontWeight:600 }}>Daily limit reached</p>
-            <p style={{ color:"rgba(255,255,255,0.4)",fontSize:13,margin:0 }}>நாளை மீண்டும் வாருங்கள் 🙏</p>
-          </div>
-        )}
-
-        <div ref={bottomRef} />
-      </div>
-
-      {/* ── Input Area ── */}
-      <div style={{
-        padding: "12px 16px",
-        borderTop: "1px solid rgba(255,255,255,0.06)",
-        background: "rgba(0,0,0,0.35)",
-        backdropFilter: "blur(12px)",
-        flexShrink: 0,
-      }}>
-        {uploadPreview && (
-          <div style={{ position:"relative",display:"inline-block",marginBottom:8 }}>
-            <img src={uploadPreview} alt="preview" style={{ width:64,height:64,objectFit:"cover",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)" }} />
-            <button onClick={removeFile} style={{ position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:"50%",background:"#ef4444",border:"none",color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,lineHeight:1 }}>
-              <CloseIcon />
+          {/* Plus button */}
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            <button
+              onClick={() => setShowPlusMenu(p => !p)}
+              style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: showPlusMenu ? "rgba(16,185,129,0.2)" : "rgba(255,255,255,0.07)", color: showPlusMenu ? "#10b981" : "rgba(255,255,255,0.5)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s", transform: showPlusMenu ? "rotate(45deg)" : "none" }}
+            >
+              <PlusIcon />
             </button>
-          </div>
-        )}
-        <div style={{ display:"flex",gap:8,alignItems:"flex-end" }}>
-          <button
-            id="btn-upload"
-            onClick={() => fileInputRef.current?.click()}
-            title="Upload image"
-            style={{
-              width:40,height:40,borderRadius:10,flexShrink:0,
-              background:"rgba(255,255,255,0.06)",
-              border:"1px solid rgba(255,255,255,0.08)",
-              color:"rgba(255,255,255,0.5)",cursor:"pointer",
-              display:"flex",alignItems:"center",justifyContent:"center",
-            }}
-          >
-            <PlusIcon />
-          </button>
-          <input ref={fileInputRef} type="file" accept="image/*,.pdf" onChange={handleFileChange} style={{ display:"none" }} />
 
+            {showPlusMenu && (
+              <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: 0, background: "#1a1f2e", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: 8, minWidth: 220, zIndex: 30, animation: "slideUp 0.2s ease", boxShadow: "0 16px 48px rgba(0,0,0,0.5)" }}>
+                {plusMenuItems.map(item => (
+                  <button key={item.mode} onClick={() => { setUploadMode(item.mode); setShowUploadModal(true); setShowPlusMenu(false); }}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "none", background: "none", color: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit", transition: "background 0.15s" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "none"}
+                  >
+                    <span style={{ color: item.color }}>{item.icon}</span>
+                    <div style={{ textAlign: "left" }}>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{item.label}</div>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>{item.sublabel}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Text input */}
           <textarea
             ref={inputRef}
-            id="chat-input"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="உங்கள் கேள்வி தமிழிலோ English-லோ கேளுங்க..."
+            value={inputText}
+            onChange={e => setInputText(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            placeholder={isListening ? "🎤 Listening... (Tamil/English)" : "கேள்வி கேளுங்க... (Tamil or English)"}
             rows={1}
-            style={{
-              flex:1, background:"rgba(255,255,255,0.06)",
-              border:"1px solid rgba(255,255,255,0.09)",
-              borderRadius:12, color:"#fff", fontSize:14,
-              padding:"10px 14px", resize:"none", outline:"none",
-              fontFamily:"inherit", lineHeight:1.5,
-              maxHeight:120, overflowY:"auto",
-              scrollbarWidth:"none",
-            }}
-            onInput={e => {
-              e.target.style.height = "auto";
-              e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
-            }}
+            disabled={promptCount >= MAX_PROMPTS}
+            style={{ flex: 1, background: "none", border: "none", color: "rgba(255,255,255,0.9)", fontSize: 14, lineHeight: 1.5, resize: "none", padding: "8px 4px", maxHeight: 120, overflowY: "auto", outline: "none", opacity: promptCount >= MAX_PROMPTS ? 0.4 : 1 }}
           />
 
+          {/* Mic */}
           <button
-            id="btn-voice"
-            onClick={toggleVoice}
-            title="Voice input"
-            style={{
-              width:40,height:40,borderRadius:10,flexShrink:0,
-              background: isListening ? "rgba(239,68,68,0.2)" : "rgba(255,255,255,0.06)",
-              border: isListening ? "1px solid rgba(239,68,68,0.4)" : "1px solid rgba(255,255,255,0.08)",
-              color: isListening ? "#f87171" : "rgba(255,255,255,0.5)",
-              cursor:"pointer",
-              display:"flex",alignItems:"center",justifyContent:"center",
-            }}
+            onClick={handleVoice}
+            style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: isListening ? "rgba(239,68,68,0.2)" : "rgba(255,255,255,0.07)", color: isListening ? "#ef4444" : "rgba(255,255,255,0.5)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s" }}
           >
             <MicIcon active={isListening} />
           </button>
 
+          {/* Send */}
           <button
-            id="btn-send"
-            onClick={() => sendMessage()}
-            disabled={loading || (!input.trim() && !uploadedFile)}
+            onClick={() => handleSend()}
+            disabled={(!inputText.trim() && !pendingFile) || isLoading || promptCount >= MAX_PROMPTS}
             style={{
-              width:40,height:40,borderRadius:10,flexShrink:0,
-              background: loading || (!input.trim()&&!uploadedFile)
-                ? "rgba(255,255,255,0.06)"
-                : "linear-gradient(135deg,#22c55e,#16a34a)",
-              border:"none",
-              color: loading || (!input.trim()&&!uploadedFile)
-                ? "rgba(255,255,255,0.3)"
-                : "#fff",
-              cursor: loading || (!input.trim()&&!uploadedFile) ? "not-allowed" : "pointer",
-              display:"flex",alignItems:"center",justifyContent:"center",
-              transition:"all 0.15s",
+              width: 36, height: 36, borderRadius: 10, border: "none",
+              background: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "linear-gradient(135deg, #059669, #10b981)" : "rgba(255,255,255,0.07)",
+              color: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "white" : "rgba(255,255,255,0.25)",
+              cursor: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "pointer" : "default",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s",
+              boxShadow: (inputText.trim() || pendingFile) && !isLoading ? "0 4px 12px rgba(16,185,129,0.3)" : "none"
             }}
           >
             <SendIcon />
           </button>
         </div>
-      </div>
 
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        @keyframes fadeIn { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:none } }
-        @keyframes bounce { 0%,80%,100% { transform:translateY(0) } 40% { transform:translateY(-6px) } }
-        * { box-sizing:border-box; margin:0; padding:0; }
-        ::-webkit-scrollbar { width:4px; }
-        ::-webkit-scrollbar-track { background:transparent; }
-        ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.1); border-radius:2px; }
-        textarea::-webkit-scrollbar { display:none; }
-      `}</style>
+        <p style={{ margin: "8px 0 0", fontSize: 11, color: "rgba(255,255,255,0.2)", textAlign: "center" }}>
+          Anbu AI is for information only • Doctor advice மட்டும் follow பண்ணுங்க
+        </p>
+      </div>
     </div>
   );
 }
