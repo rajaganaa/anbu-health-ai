@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { auth } from "./firebase";
+import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 
-// ── Icons (inline SVG components) ─────────────────────────────────────────────
+// ── Icons ─────────────────────────────────────────────────────────────────────
 const SendIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
@@ -80,20 +82,15 @@ const NewChatIcon = () => (
 // ── API ────────────────────────────────────────────────────────────────────────
 const API_URL = "https://anbu-health-ai.kindrock-2ca528ff.centralindia.azurecontainerapps.io";
 
-async function callAnbuAPI(message, uploadedFile, mode, phone, chatId) {
+async function callAnbuAPI(message, uploadedFile, mode, phone, chatId, authToken) {
   const formData = new FormData();
   formData.append("question", message);
-  // Only send mode when there's a file — otherwise always use "general"
   formData.append("mode", (uploadedFile && mode) ? mode : "general");
   if (uploadedFile) formData.append("image", uploadedFile);
   if (phone) formData.append("phone", phone);
   if (chatId) formData.append("chat_id", chatId);
-
-  const response = await fetch(`${API_URL}/api/analyze`, {
-    method: "POST",
-    body: formData,
-  });
-
+  const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
+  const response = await fetch(`${API_URL}/api/analyze`, { method: "POST", headers, body: formData });
   if (response.status === 429) {
     const errBody = await response.json().catch(() => ({}));
     const err = new Error("DAILY_LIMIT");
@@ -101,71 +98,40 @@ async function callAnbuAPI(message, uploadedFile, mode, phone, chatId) {
     err.message_ta = errBody?.detail?.message;
     throw err;
   }
-
-  if (!response.ok) {
-    throw new Error(`Server error: ${response.status}`);
-  }
-
+  if (!response.ok) throw new Error(`Server error: ${response.status}`);
   const data = await response.json();
-  // final_answer lives at data.final_answer (= sakshi.final_answer) or buddhi.draft_answer
-  const answer =
-    data.final_answer ||
-    data.sakshi?.final_answer ||
-    data.buddhi?.draft_answer ||
-    "பதில் கிடைக்கவில்லை. மீண்டும் try பண்ணுங்க.";
-  // structured card data is always at data.buddhi.structured_response
+  const answer = data.final_answer || data.sakshi?.final_answer || data.buddhi?.draft_answer || "பதில் கிடைக்கவில்லை. மீண்டும் try பண்ணுங்க.";
   const structured = data.buddhi?.structured_response || null;
-  return {
-    mode: data.mode,
-    answer: answer,
-    structured: structured,
-    prompts: data.prompts || null, // server-side {count, remaining, limit, allowed} when phone sent
-  };
+  return { mode: data.mode, answer, structured, prompts: data.prompts || null };
 }
 
-// ── Auth API (MSG91 OTP via backend) ────────────────────────────────────────────
-async function apiSendOtp(phone) {
-  const fd = new FormData();
-  fd.append("phone", phone);
-  const r = await fetch(`${API_URL}/api/send-otp`, { method: "POST", body: fd });
+// ── Firebase Auth API ──────────────────────────────────────────────────────────
+async function apiFirebaseSession(idToken) {
+  const r = await fetch(`${API_URL}/api/auth/firebase-session`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${idToken}`, "Content-Type": "application/json" },
+  });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.detail || "Failed to send OTP");
-  return data;
+  if (!r.ok) throw new Error(data.detail || "Firebase session failed");
+  return data; // { phone, prompts }
 }
 
-async function apiResendOtp(phone) {
-  const fd = new FormData();
-  fd.append("phone", phone);
-  const r = await fetch(`${API_URL}/api/auth/resend-otp`, { method: "POST", body: fd });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.detail || "Failed to resend OTP");
-  return data;
-}
-
-async function apiVerifyOtp(phone, otp) {
-  const fd = new FormData();
-  fd.append("phone", phone);
-  fd.append("otp", otp);
-  const r = await fetch(`${API_URL}/api/verify-otp`, { method: "POST", body: fd });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.detail || "Verification failed");
-  return data; // { success, phone, user_id, prompts }
-}
-
-async function apiUserStatus(phone) {
-  const r = await fetch(`${API_URL}/api/user/status?phone=${encodeURIComponent(phone)}`);
+async function apiUserStatus(phone, authToken) {
+  const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
+  const r = await fetch(`${API_URL}/api/user/status?phone=${encodeURIComponent(phone)}`, { headers });
   if (!r.ok) return null;
-  return r.json(); // { count, remaining, limit, allowed }
+  return r.json();
 }
 
-async function apiUserHistory(phone) {
-  const r = await fetch(`${API_URL}/api/user/history?phone=${encodeURIComponent(phone)}`);
+async function apiUserHistory(phone, authToken) {
+  const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
+  const r = await fetch(`${API_URL}/api/user/history?phone=${encodeURIComponent(phone)}`, { headers });
   if (!r.ok) return [];
   const data = await r.json();
   return data.messages || [];
 }
 
-// ── Prompt counter (localStorage fallback — used when Supabase isn't configured) ──
+// ── Prompt counter (localStorage fallback) ─────────────────────────────────────
 const MAX_PROMPTS = 20;
 function getPromptData() {
   try {
@@ -178,17 +144,14 @@ function getPromptData() {
 function incrementPrompt() {
   const data = getPromptData();
   const updated = { ...data, count: data.count + 1, date: new Date().toDateString() };
-  try { localStorage.setItem("anbu_prompts", JSON.stringify(updated)); } catch { }
+  try { localStorage.setItem("anbu_prompts", JSON.stringify(updated)); } catch {}
   return updated.count;
 }
 
-// SectionLabel, Card, RowItem, FollowUpButtons, C removed (unused — new cards use inline styles)
-
-// ── 1. StructuredLabResult — matches client-approved lab template ─────────────
+// ── 1. StructuredLabResult ────────────────────────────────────────────────────
 function StructuredLabResult({ data, onFollowUp }) {
   const [lang, setLang] = useState("en");
   if (!data) return null;
-  // urgency display handled inline
   const findings   = data.findings || [];
   const abnormal   = data.abnormal_findings || findings.filter(f => /HIGH|LOW/i.test(f));
   const normalF    = data.normal_findings  || findings.filter(f => !/HIGH|LOW/i.test(f));
@@ -220,11 +183,11 @@ function StructuredLabResult({ data, onFollowUp }) {
   const grouped = {};
   findings.forEach(f => { const cat = getCategory(f); if (!grouped[cat]) grouped[cat] = []; grouped[cat].push(f); });
   const S = {
-    sec: { background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.09)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    sec:  { background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.09)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
     secD: { background:"rgba(239,68,68,0.05)",border:"0.5px solid rgba(239,68,68,0.22)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
-    lbl: { fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8,display:"block" },
-    lb: (a) => ({ fontSize:11,padding:"3px 10px",borderRadius:6,border:`0.5px solid ${a?"rgba(96,165,250,0.4)":"rgba(255,255,255,0.15)"}`,background:a?"rgba(96,165,250,0.12)":"transparent",color:a?"#60a5fa":"rgba(255,255,255,0.4)",cursor:"pointer" }),
-    fq: { fontSize:12,padding:"5px 12px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit" },
+    lbl:  { fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8,display:"block" },
+    lb:   (a) => ({ fontSize:11,padding:"3px 10px",borderRadius:6,border:`0.5px solid ${a?"rgba(96,165,250,0.4)":"rgba(255,255,255,0.15)"}`,background:a?"rgba(96,165,250,0.12)":"transparent",color:a?"#60a5fa":"rgba(255,255,255,0.4)",cursor:"pointer" }),
+    fq:   { fontSize:12,padding:"5px 12px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit" },
   };
   const followUps = [];
   if (abnormal.some(f => /Glucose|HbA1c|Sugar/i.test(f))) followUps.push("Diabetes control பண்றது எப்படி?");
@@ -318,7 +281,7 @@ function StructuredLabResult({ data, onFollowUp }) {
   );
 }
 
-// ── 2. StructuredScanResult — matches client-approved scan template ───────────
+// ── 2. StructuredScanResult ───────────────────────────────────────────────────
 function StructuredScanResult({ data, onFollowUp }) {
   const [lang, setLang] = useState("en");
   if (!data) return null;
@@ -347,18 +310,18 @@ function StructuredScanResult({ data, onFollowUp }) {
   const uc = urgencyMap[urgency] || urgencyMap.routine;
   const defaultChecklist = [
     { label:"Bone cortex",       status:fracture?"Disrupted (fracture)":"Normal",ok:!fracture },
-    { label:"Implant / hardware",status:implants?"Detected":"None",             ok:true },
-    { label:"Joint space",       status:"Not clearly evaluable",                ok:null },
-    { label:"Soft tissue",       status:"No gross abnormality",                 ok:true },
-    { label:"Bone density",      status:"Normal",                               ok:true },
+    { label:"Implant / hardware",status:implants?"Detected":"None",ok:true },
+    { label:"Joint space",       status:"Not clearly evaluable",ok:null },
+    { label:"Soft tissue",       status:"No gross abnormality",ok:true },
+    { label:"Bone density",      status:"Normal",ok:true },
   ];
   const S = {
-    card: { background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.09)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
-    cardD:{ background:"rgba(239,68,68,0.05)",border:"0.5px solid rgba(239,68,68,0.22)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
-    cardW:{ background:"rgba(245,158,11,0.05)",border:"0.5px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
-    lbl: { fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8,display:"block" },
-    lb: (a)=>({ fontSize:11,padding:"3px 10px",borderRadius:6,border:`0.5px solid ${a?"rgba(96,165,250,0.4)":"rgba(255,255,255,0.15)"}`,background:a?"rgba(96,165,250,0.12)":"transparent",color:a?"#60a5fa":"rgba(255,255,255,0.4)",cursor:"pointer" }),
-    fq: { fontSize:12,padding:"5px 12px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit" },
+    card:  { background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.09)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    cardD: { background:"rgba(239,68,68,0.05)",border:"0.5px solid rgba(239,68,68,0.22)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    cardW: { background:"rgba(245,158,11,0.05)",border:"0.5px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    lbl:   { fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8,display:"block" },
+    lb:    (a)=>({ fontSize:11,padding:"3px 10px",borderRadius:6,border:`0.5px solid ${a?"rgba(96,165,250,0.4)":"rgba(255,255,255,0.15)"}`,background:a?"rgba(96,165,250,0.12)":"transparent",color:a?"#60a5fa":"rgba(255,255,255,0.4)",cursor:"pointer" }),
+    fq:    { fontSize:12,padding:"5px 12px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit" },
   };
   const followUps = [];
   if (implants) followUps.push("Can I do MRI with metal implant?");
@@ -460,7 +423,7 @@ function StructuredScanResult({ data, onFollowUp }) {
       <div style={S.cardW}>
         <div style={{ display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:"#fbbf24" }}>
           <span style={{ flexShrink:0,marginTop:1 }}>ℹ️</span>
-          <span style={{ lineHeight:1.55 }}>{disclaimer} <strong>Always get a formal radiology report</strong> from a qualified radiologist and consult your doctor.</span>
+          <span style={{ lineHeight:1.55 }}>{disclaimer} <strong>Always get a formal radiology report</strong> from a qualified radiologist.</span>
         </div>
       </div>
       <div style={S.card}>
@@ -473,7 +436,7 @@ function StructuredScanResult({ data, onFollowUp }) {
   );
 }
 
-// ── 3. StructuredMedicineResult — matches client-approved medicine template ────
+// ── 3. StructuredMedicineResult ───────────────────────────────────────────────
 function StructuredMedicineResult({ data, onFollowUp }) {
   const [lang, setLang] = useState("en");
   if (!data) return null;
@@ -512,15 +475,15 @@ function StructuredMedicineResult({ data, onFollowUp }) {
     { label:"Kidney disease",val:data.kidney       ||"Reduce dose",     ok:null  },
   ];
   const S = {
-    card: { background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.09)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
-    cardD:{ background:"rgba(239,68,68,0.05)",border:"0.5px solid rgba(239,68,68,0.22)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
-    cardW:{ background:"rgba(245,158,11,0.05)",border:"0.5px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
-    lbl: { fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8,display:"block" },
-    lb: (a)=>({ fontSize:11,padding:"3px 10px",borderRadius:6,border:`0.5px solid ${a?"rgba(96,165,250,0.4)":"rgba(255,255,255,0.15)"}`,background:a?"rgba(96,165,250,0.12)":"transparent",color:a?"#60a5fa":"rgba(255,255,255,0.4)",cursor:"pointer" }),
-    row: (last)=>({ display:"flex",alignItems:"flex-start",gap:10,padding:"7px 0",borderBottom:last?"none":"0.5px solid rgba(255,255,255,0.05)",fontSize:13 }),
-    rl: { color:"rgba(255,255,255,0.4)",minWidth:130,flexShrink:0 },
-    rv: { color:"rgba(255,255,255,0.85)",fontWeight:500,flex:1 },
-    fq: { fontSize:12,padding:"5px 12px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit" },
+    card:  { background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.09)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    cardD: { background:"rgba(239,68,68,0.05)",border:"0.5px solid rgba(239,68,68,0.22)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    cardW: { background:"rgba(245,158,11,0.05)",border:"0.5px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:10 },
+    lbl:   { fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8,display:"block" },
+    lb:    (a)=>({ fontSize:11,padding:"3px 10px",borderRadius:6,border:`0.5px solid ${a?"rgba(96,165,250,0.4)":"rgba(255,255,255,0.15)"}`,background:a?"rgba(96,165,250,0.12)":"transparent",color:a?"#60a5fa":"rgba(255,255,255,0.4)",cursor:"pointer" }),
+    row:   (last)=>({ display:"flex",alignItems:"flex-start",gap:10,padding:"7px 0",borderBottom:last?"none":"0.5px solid rgba(255,255,255,0.05)",fontSize:13 }),
+    rl:    { color:"rgba(255,255,255,0.4)",minWidth:130,flexShrink:0 },
+    rv:    { color:"rgba(255,255,255,0.85)",fontWeight:500,flex:1 },
+    fq:    { fontSize:12,padding:"5px 12px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit" },
   };
   const followUps = [
     drugName?`Can I take ${drugName} during pregnancy?`:"Safe during pregnancy?",
@@ -666,95 +629,42 @@ function StructuredMedicineResult({ data, onFollowUp }) {
 function MessageBubble({ msg, isLast, onFollowUp }) {
   const isUser = msg.role === "user";
   const [audioPlaying, setAudioPlaying] = useState(false);
-
   const speakText = () => {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     const utter = new SpeechSynthesisUtterance(msg.content.slice(0, 300));
-    utter.lang = "ta-IN";
-    utter.rate = 0.9;
+    utter.lang = "ta-IN"; utter.rate = 0.9;
     setAudioPlaying(true);
     utter.onend = () => setAudioPlaying(false);
     window.speechSynthesis.speak(utter);
   };
-
-  // ── 4. FIXED: determine which structured card to show ──────────────────────
   const hasLabOrScan = msg.structured && (msg.fileMode === "lab" || msg.fileMode === "scan") && (msg.structured.findings || msg.structured.urgency);
   const hasMedicine  = msg.structured && msg.fileMode === "medicine" && (msg.structured.uses || msg.structured.dosage || msg.structured.side_effects || msg.structured.sideEffects);
   const isScan       = msg.fileMode === "scan";
-
   return (
-    <div style={{
-      display: "flex", gap: 10, padding: "6px 0",
-      flexDirection: isUser ? "row-reverse" : "row",
-      alignItems: "flex-start",
-      animation: isLast ? "slideUp 0.3s ease" : "none"
-    }}>
-      {/* Avatar */}
-      <div style={{
-        width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        background: isUser
-          ? "linear-gradient(135deg, #6366f1, #8b5cf6)"
-          : "linear-gradient(135deg, #059669, #10b981)",
-        boxShadow: isUser ? "0 2px 8px rgba(99,102,241,0.4)" : "0 2px 8px rgba(16,185,129,0.35)"
-      }}>
+    <div style={{ display:"flex",gap:10,padding:"6px 0",flexDirection:isUser?"row-reverse":"row",alignItems:"flex-start",animation:isLast?"slideUp 0.3s ease":"none" }}>
+      <div style={{ width:32,height:32,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:isUser?"linear-gradient(135deg, #6366f1, #8b5cf6)":"linear-gradient(135deg, #059669, #10b981)",boxShadow:isUser?"0 2px 8px rgba(99,102,241,0.4)":"0 2px 8px rgba(16,185,129,0.35)" }}>
         {isUser ? <UserIcon /> : <BotIcon />}
       </div>
-
-      {/* Bubble */}
-      <div style={{ maxWidth: "75%", minWidth: 80 }}>
-        {/* Upload preview chip */}
+      <div style={{ maxWidth:"75%",minWidth:80 }}>
         {msg.file && (
-          <div style={{
-            background: "rgba(255,255,255,0.06)", borderRadius: "12px 12px 0 0", padding: "8px 12px",
-            border: "1px solid rgba(255,255,255,0.1)", borderBottom: "none",
-            display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "rgba(255,255,255,0.6)"
-          }}>
-            <span style={{ fontSize: 18 }}>{msg.fileMode === "lab" ? "🧪" : msg.fileMode === "scan" ? "🩻" : "💊"}</span>
+          <div style={{ background:"rgba(255,255,255,0.06)",borderRadius:"12px 12px 0 0",padding:"8px 12px",border:"1px solid rgba(255,255,255,0.1)",borderBottom:"none",display:"flex",alignItems:"center",gap:8,fontSize:12,color:"rgba(255,255,255,0.6)" }}>
+            <span style={{ fontSize:18 }}>{msg.fileMode==="lab"?"🧪":msg.fileMode==="scan"?"🩻":"💊"}</span>
             <span>{msg.file}</span>
           </div>
         )}
-
-        <div style={{
-          background: isUser
-            ? "linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.2))"
-            : "rgba(255,255,255,0.05)",
-          border: isUser
-            ? "1px solid rgba(99,102,241,0.35)"
-            : "1px solid rgba(255,255,255,0.08)",
-          borderRadius: msg.file
-            ? "0 12px 12px 12px"
-            : (isUser ? "16px 4px 16px 16px" : "4px 16px 16px 16px"),
-          padding: "11px 14px",
-        }}>
-          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: "rgba(255,255,255,0.88)", whiteSpace: "pre-wrap" }}>
-            {msg.content}
-          </p>
-
-          {/* ── Structured result cards (fixed routing) ── */}
-          {hasLabOrScan && !hasMedicine && (
-            isScan
-              ? <StructuredScanResult data={msg.structured} onFollowUp={onFollowUp} />
-              : <StructuredLabResult data={msg.structured} onFollowUp={onFollowUp} />
-          )}
-          {hasMedicine && (
-            <StructuredMedicineResult data={msg.structured} onFollowUp={onFollowUp} />
-          )}
+        <div style={{ background:isUser?"linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.2))":"rgba(255,255,255,0.05)",border:isUser?"1px solid rgba(99,102,241,0.35)":"1px solid rgba(255,255,255,0.08)",borderRadius:msg.file?"0 12px 12px 12px":(isUser?"16px 4px 16px 16px":"4px 16px 16px 16px"),padding:"11px 14px" }}>
+          <p style={{ margin:0,fontSize:14,lineHeight:1.65,color:"rgba(255,255,255,0.88)",whiteSpace:"pre-wrap" }}>{msg.content}</p>
+          {hasLabOrScan && !hasMedicine && (isScan ? <StructuredScanResult data={msg.structured} onFollowUp={onFollowUp} /> : <StructuredLabResult data={msg.structured} onFollowUp={onFollowUp} />)}
+          {hasMedicine && <StructuredMedicineResult data={msg.structured} onFollowUp={onFollowUp} />}
         </div>
-
-        {/* Listen / timestamp row */}
         {!isUser && (
-          <div style={{ display: "flex", gap: 8, marginTop: 5, paddingLeft: 4 }}>
-            <button onClick={speakText} style={{
-              display: "flex", alignItems: "center", gap: 4, fontSize: 11,
-              color: audioPlaying ? "#10b981" : "rgba(255,255,255,0.35)",
-              background: "none", border: "none", cursor: "pointer", padding: "2px 6px", borderRadius: 4, transition: "color 0.2s"
-            }}>
+          <div style={{ display:"flex",gap:8,marginTop:5,paddingLeft:4 }}>
+            <button onClick={speakText} style={{ display:"flex",alignItems:"center",gap:4,fontSize:11,color:audioPlaying?"#10b981":"rgba(255,255,255,0.35)",background:"none",border:"none",cursor:"pointer",padding:"2px 6px",borderRadius:4,transition:"color 0.2s" }}>
               {audioPlaying ? "🔊 Playing..." : "🔈 Listen (Tamil)"}
             </button>
-            <span style={{ color: "rgba(255,255,255,0.15)", fontSize: 11 }}>
-              {new Date(msg.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+            <span style={{ color:"rgba(255,255,255,0.15)",fontSize:11 }}>
+              {new Date(msg.timestamp).toLocaleTimeString("en-IN", { hour:"2-digit",minute:"2-digit" })}
             </span>
           </div>
         )}
@@ -765,15 +675,11 @@ function MessageBubble({ msg, isLast, onFollowUp }) {
 
 function TypingIndicator() {
   return (
-    <div style={{ display: "flex", gap: 10, padding: "6px 0", alignItems: "flex-start" }}>
-      <div style={{ width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #059669, #10b981)" }}>
-        <BotIcon />
-      </div>
-      <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "4px 16px 16px 16px", padding: "14px 18px" }}>
-        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-          {[0, 1, 2].map(i => (
-            <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: "#10b981", animation: `bounce 1.2s ${i * 0.15}s infinite` }} />
-          ))}
+    <div style={{ display:"flex",gap:10,padding:"6px 0",alignItems:"flex-start" }}>
+      <div style={{ width:32,height:32,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg, #059669, #10b981)" }}><BotIcon /></div>
+      <div style={{ background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:"4px 16px 16px 16px",padding:"14px 18px" }}>
+        <div style={{ display:"flex",gap:5,alignItems:"center" }}>
+          {[0,1,2].map(i=><div key={i} style={{ width:7,height:7,borderRadius:"50%",background:"#10b981",animation:`bounce 1.2s ${i*0.15}s infinite` }} />)}
         </div>
       </div>
     </div>
@@ -784,72 +690,41 @@ function UploadModal({ mode, onClose, onUpload }) {
   const [dragging, setDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef();
-
   const modeConfig = {
-    lab:      { emoji: "🧪", title: "Lab Report Upload",  subtitle: "Blood test, urine test, sugar report",  color: "#60a5fa", accept: ".pdf,.jpg,.jpeg,.png" },
-    scan:     { emoji: "🩻", title: "X-Ray / Scan Upload", subtitle: "Chest X-ray, ultrasound, MRI scan",     color: "#a78bfa", accept: ".jpg,.jpeg,.png,.dicom" },
-    medicine: { emoji: "💊", title: "Medicine Photo",      subtitle: "Take a photo of medicine strip or box", color: "#34d399", accept: ".jpg,.jpeg,.png" },
+    lab:      { emoji:"🧪",title:"Lab Report Upload",  subtitle:"Blood test, urine test, sugar report",  color:"#60a5fa",accept:".pdf,.jpg,.jpeg,.png" },
+    scan:     { emoji:"🩻",title:"X-Ray / Scan Upload",subtitle:"Chest X-ray, ultrasound, MRI scan",      color:"#a78bfa",accept:".jpg,.jpeg,.png,.dicom" },
+    medicine: { emoji:"💊",title:"Medicine Photo",      subtitle:"Take a photo of medicine strip or box",  color:"#34d399",accept:".jpg,.jpeg,.png" },
   }[mode];
-
   const handleFile = (file) => setSelectedFile(file);
   const handleDrop = (e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); };
-
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
-      <div style={{ background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 20, padding: 28, width: "100%", maxWidth: 400, animation: "slideUp 0.3s ease" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+    <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:20 }}>
+      <div style={{ background:"#1a1a2e",border:"1px solid rgba(255,255,255,0.12)",borderRadius:20,padding:28,width:"100%",maxWidth:400,animation:"slideUp 0.3s ease" }}>
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20 }}>
           <div>
-            <div style={{ fontSize: 28, marginBottom: 4 }}>{modeConfig.emoji}</div>
-            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "white" }}>{modeConfig.title}</h3>
-            <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>{modeConfig.subtitle}</p>
+            <div style={{ fontSize:28,marginBottom:4 }}>{modeConfig.emoji}</div>
+            <h3 style={{ margin:0,fontSize:17,fontWeight:700,color:"white" }}>{modeConfig.title}</h3>
+            <p style={{ margin:"4px 0 0",fontSize:12,color:"rgba(255,255,255,0.45)" }}>{modeConfig.subtitle}</p>
           </div>
-          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.08)", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <CloseIcon />
-          </button>
+          <button onClick={onClose} style={{ background:"rgba(255,255,255,0.08)",border:"none",borderRadius:"50%",width:32,height:32,cursor:"pointer",color:"rgba(255,255,255,0.6)",display:"flex",alignItems:"center",justifyContent:"center" }}><CloseIcon /></button>
         </div>
-
-        <div
-          onDragOver={e => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          style={{
-            border: `2px dashed ${dragging ? modeConfig.color : "rgba(255,255,255,0.15)"}`,
-            borderRadius: 14, padding: "30px 20px", textAlign: "center", cursor: "pointer",
-            background: dragging ? `${modeConfig.color}08` : "rgba(255,255,255,0.02)",
-            transition: "all 0.2s", marginBottom: 16
-          }}
-        >
-          <input ref={fileInputRef} type="file" accept={modeConfig.accept} style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
+        <div onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)} onDrop={handleDrop} onClick={()=>fileInputRef.current?.click()}
+          style={{ border:`2px dashed ${dragging?modeConfig.color:"rgba(255,255,255,0.15)"}`,borderRadius:14,padding:"30px 20px",textAlign:"center",cursor:"pointer",background:dragging?`${modeConfig.color}08`:"rgba(255,255,255,0.02)",transition:"all 0.2s",marginBottom:16 }}>
+          <input ref={fileInputRef} type="file" accept={modeConfig.accept} style={{ display:"none" }} onChange={e=>handleFile(e.target.files[0])} />
           {selectedFile ? (
-            <>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>✅</div>
-              <p style={{ margin: 0, fontSize: 14, color: modeConfig.color, fontWeight: 600 }}>{selectedFile.name}</p>
-              <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>{(selectedFile.size / 1024).toFixed(0)} KB</p>
-            </>
+            <><div style={{ fontSize:36,marginBottom:8 }}>✅</div>
+            <p style={{ margin:0,fontSize:14,color:modeConfig.color,fontWeight:600 }}>{selectedFile.name}</p>
+            <p style={{ margin:"4px 0 0",fontSize:12,color:"rgba(255,255,255,0.4)" }}>{(selectedFile.size/1024).toFixed(0)} KB</p></>
           ) : (
-            <>
-              <div style={{ color: "rgba(255,255,255,0.3)", marginBottom: 10 }}><UploadIcon /></div>
-              <p style={{ margin: 0, fontSize: 14, color: "rgba(255,255,255,0.5)" }}>Tap to upload or drag & drop</p>
-              <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.25)" }}>{modeConfig.accept}</p>
-            </>
+            <><div style={{ color:"rgba(255,255,255,0.3)",marginBottom:10 }}><UploadIcon /></div>
+            <p style={{ margin:0,fontSize:14,color:"rgba(255,255,255,0.5)" }}>Tap to upload or drag & drop</p>
+            <p style={{ margin:"4px 0 0",fontSize:12,color:"rgba(255,255,255,0.25)" }}>{modeConfig.accept}</p></>
           )}
         </div>
-
-        <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.6)", fontSize: 14, cursor: "pointer" }}>
-            Cancel
-          </button>
-          <button
-            onClick={() => selectedFile && onUpload(selectedFile, mode)}
-            disabled={!selectedFile}
-            style={{
-              flex: 2, padding: "11px 0", borderRadius: 10, border: "none",
-              background: selectedFile ? `linear-gradient(135deg, ${modeConfig.color}, ${modeConfig.color}bb)` : "rgba(255,255,255,0.08)",
-              color: selectedFile ? "white" : "rgba(255,255,255,0.3)", fontSize: 14, fontWeight: 600,
-              cursor: selectedFile ? "pointer" : "default", transition: "all 0.2s"
-            }}
-          >
+        <div style={{ display:"flex",gap:10 }}>
+          <button onClick={onClose} style={{ flex:1,padding:"11px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",fontSize:14,cursor:"pointer" }}>Cancel</button>
+          <button onClick={()=>selectedFile&&onUpload(selectedFile,mode)} disabled={!selectedFile}
+            style={{ flex:2,padding:"11px 0",borderRadius:10,border:"none",background:selectedFile?`linear-gradient(135deg, ${modeConfig.color}, ${modeConfig.color}bb)`:"rgba(255,255,255,0.08)",color:selectedFile?"white":"rgba(255,255,255,0.3)",fontSize:14,fontWeight:600,cursor:selectedFile?"pointer":"default",transition:"all 0.2s" }}>
             Analyze {modeConfig.emoji}
           </button>
         </div>
@@ -858,106 +733,115 @@ function UploadModal({ mode, onClose, onUpload }) {
   );
 }
 
+// ── OTPModal — Firebase Phone Auth ────────────────────────────────────────────
 function OTPModal({ onSuccess, onClose }) {
   const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
-  const [step, setStep] = useState("phone");
+  const [otp, setOtp]     = useState("");
+  const [step, setStep]   = useState("phone");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [devMode, setDevMode] = useState(false);
+  const [confirmResult, setConfirmResult] = useState(null);
+
+  const setupRecaptcha = () => {
+    if (!window.recaptchaVerifier) {
+      window.recaptchaVerifier = new RecaptchaVerifier(
+        auth, "recaptcha-container", { size: "invisible" }
+      );
+    }
+  };
 
   const sendOTP = async () => {
     if (phone.length !== 10) { setError("Valid 10-digit number போடு"); return; }
     setLoading(true); setError("");
     try {
-      const res = await apiSendOtp(phone);
-      setDevMode(!!res.dev_mode);
+      setupRecaptcha();
+      const result = await signInWithPhoneNumber(auth, `+91${phone}`, window.recaptchaVerifier);
+      setConfirmResult(result);
       setStep("otp");
     } catch (e) {
       setError(e.message || "OTP send failed. Try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const resendOTP = async () => {
-    setLoading(true); setError("");
-    try {
-      const res = await apiResendOtp(phone);
-      setDevMode(!!res.dev_mode);
-      setError("OTP resent ✓");
-    } catch (e) {
-      setError(e.message || "Resend failed");
-    } finally {
-      setLoading(false);
-    }
+      window.recaptchaVerifier = null;
+    } finally { setLoading(false); }
   };
 
   const verifyOTP = async () => {
     if (otp.length !== 6) { setError("6-digit OTP போடு"); return; }
     setLoading(true); setError("");
     try {
-      const res = await apiVerifyOtp(phone, otp);
+      const result  = await confirmResult.confirm(otp);
+      const idToken = await result.user.getIdToken();
+      const res     = await apiFirebaseSession(idToken);
       setStep("success");
-      setTimeout(() => onSuccess({ phone, prompts: res.prompts }), 1200);
+      setTimeout(() => onSuccess({ phone: res.phone || phone, authToken: idToken, prompts: res.prompts }), 1200);
     } catch (e) {
-      setError(e.message || "Wrong OTP. Try again.");
-    } finally {
-      setLoading(false);
-    }
+      setError("Wrong OTP. Try again.");
+    } finally { setLoading(false); }
+  };
+
+  const resendOTP = async () => {
+    setLoading(true); setError("");
+    try {
+      window.recaptchaVerifier = null;
+      setupRecaptcha();
+      const result = await signInWithPhoneNumber(auth, `+91${phone}`, window.recaptchaVerifier);
+      setConfirmResult(result);
+      setError("OTP resent ✓");
+    } catch (e) {
+      setError("Resend failed. Try again.");
+    } finally { setLoading(false); }
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
-      <div style={{ background: "#0f1117", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 24, padding: 32, width: "100%", maxWidth: 360, animation: "slideUp 0.4s ease" }}>
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 16, background: "linear-gradient(135deg, #059669, #10b981)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", boxShadow: "0 8px 24px rgba(16,185,129,0.3)" }}>
+    <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:20 }}>
+      <div style={{ background:"#0f1117",border:"1px solid rgba(255,255,255,0.1)",borderRadius:24,padding:32,width:"100%",maxWidth:360,animation:"slideUp 0.4s ease" }}>
+        <div style={{ textAlign:"center",marginBottom:28 }}>
+          <div style={{ width:56,height:56,borderRadius:16,background:"linear-gradient(135deg, #059669, #10b981)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px",boxShadow:"0 8px 24px rgba(16,185,129,0.3)" }}>
             <HeartIcon />
           </div>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "white" }}>Anbu Health AI</h2>
-          <p style={{ margin: "6px 0 0", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>Tamil Nadu Village Healthcare</p>
+          <h2 style={{ margin:0,fontSize:22,fontWeight:800,color:"white" }}>Anbu Health AI</h2>
+          <p style={{ margin:"6px 0 0",fontSize:13,color:"rgba(255,255,255,0.4)" }}>Tamil Nadu Village Healthcare</p>
         </div>
 
+        {/* Firebase invisible reCAPTCHA anchor */}
+        <div id="recaptcha-container" />
+
         {step === "success" ? (
-          <div style={{ textAlign: "center", padding: "20px 0" }}>
-            <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
-            <p style={{ margin: 0, fontSize: 16, color: "#10b981", fontWeight: 700 }}>Login Success!</p>
-            <p style={{ margin: "6px 0 0", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>Welcome to Anbu Health AI</p>
+          <div style={{ textAlign:"center",padding:"20px 0" }}>
+            <div style={{ fontSize:48,marginBottom:12 }}>✅</div>
+            <p style={{ margin:0,fontSize:16,color:"#10b981",fontWeight:700 }}>Login Success!</p>
+            <p style={{ margin:"6px 0 0",fontSize:13,color:"rgba(255,255,255,0.4)" }}>Welcome to Anbu Health AI</p>
           </div>
         ) : step === "phone" ? (
           <>
-            <p style={{ margin: "0 0 16px", fontSize: 14, color: "rgba(255,255,255,0.6)", textAlign: "center" }}>Phone number போடு — OTP வரும்</p>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-              <div style={{ padding: "13px 12px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, fontSize: 14, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 4 }}>
+            <p style={{ margin:"0 0 16px",fontSize:14,color:"rgba(255,255,255,0.6)",textAlign:"center" }}>Phone number போடு — OTP வரும்</p>
+            <div style={{ display:"flex",gap:8,marginBottom:12 }}>
+              <div style={{ padding:"13px 12px",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,fontSize:14,color:"rgba(255,255,255,0.6)",display:"flex",alignItems:"center",gap:4 }}>
                 <PhoneIcon /> +91
               </div>
-              <input
-                type="tel" maxLength={10} value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, ""))}
+              <input type="tel" maxLength={10} value={phone} onChange={e=>setPhone(e.target.value.replace(/\D/g,""))}
                 placeholder="98765 43210"
-                style={{ flex: 1, padding: "13px 14px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, fontSize: 16, color: "white", outline: "none", letterSpacing: 2 }}
-              />
+                style={{ flex:1,padding:"13px 14px",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,fontSize:16,color:"white",outline:"none",letterSpacing:2 }} />
             </div>
-            {error && <p style={{ margin: "0 0 10px", fontSize: 12, color: "#ef4444", textAlign: "center" }}>{error}</p>}
-            <button onClick={sendOTP} disabled={loading || phone.length !== 10} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", background: phone.length === 10 ? "linear-gradient(135deg, #059669, #10b981)" : "rgba(255,255,255,0.07)", color: phone.length === 10 ? "white" : "rgba(255,255,255,0.3)", fontSize: 15, fontWeight: 700, cursor: phone.length === 10 ? "pointer" : "default", transition: "all 0.2s" }}>
+            {error && <p style={{ margin:"0 0 10px",fontSize:12,color:"#ef4444",textAlign:"center" }}>{error}</p>}
+            <button onClick={sendOTP} disabled={loading || phone.length !== 10}
+              style={{ width:"100%",padding:"14px",borderRadius:12,border:"none",background:phone.length===10?"linear-gradient(135deg, #059669, #10b981)":"rgba(255,255,255,0.07)",color:phone.length===10?"white":"rgba(255,255,255,0.3)",fontSize:15,fontWeight:700,cursor:phone.length===10?"pointer":"default",transition:"all 0.2s" }}>
               {loading ? "Sending..." : "OTP அனுப்பு →"}
             </button>
           </>
         ) : (
           <>
-            <p style={{ margin: "0 0 6px", fontSize: 14, color: "rgba(255,255,255,0.6)", textAlign: "center" }}>+91 {phone} க்கு OTP வந்தது</p>
-            {devMode && <p style={{ margin: "0 0 16px", fontSize: 12, color: "rgba(255,255,255,0.3)", textAlign: "center" }}>(Dev mode — check server logs for the OTP, or enter any 6 digits)</p>}
-            <input
-              type="tel" maxLength={6} value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, ""))}
+            <p style={{ margin:"0 0 6px",fontSize:14,color:"rgba(255,255,255,0.6)",textAlign:"center" }}>+91 {phone} க்கு OTP வந்தது</p>
+            <input type="tel" maxLength={6} value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,""))}
               placeholder="• • • • • •"
-              style={{ width: "100%", padding: "16px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, fontSize: 24, color: "white", outline: "none", letterSpacing: 12, textAlign: "center", boxSizing: "border-box", marginBottom: 12 }}
-            />
-            {error && <p style={{ margin: "0 0 10px", fontSize: 12, color: error.includes("✓") ? "#10b981" : "#ef4444", textAlign: "center" }}>{error}</p>}
-            <button onClick={verifyOTP} disabled={loading || otp.length !== 6} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", background: otp.length === 6 ? "linear-gradient(135deg, #059669, #10b981)" : "rgba(255,255,255,0.07)", color: otp.length === 6 ? "white" : "rgba(255,255,255,0.3)", fontSize: 15, fontWeight: 700, cursor: otp.length === 6 ? "pointer" : "default", transition: "all 0.2s" }}>
+              style={{ width:"100%",padding:"16px",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,fontSize:24,color:"white",outline:"none",letterSpacing:12,textAlign:"center",boxSizing:"border-box",marginBottom:12 }} />
+            {error && <p style={{ margin:"0 0 10px",fontSize:12,color:error.includes("✓")?"#10b981":"#ef4444",textAlign:"center" }}>{error}</p>}
+            <button onClick={verifyOTP} disabled={loading || otp.length !== 6}
+              style={{ width:"100%",padding:"14px",borderRadius:12,border:"none",background:otp.length===6?"linear-gradient(135deg, #059669, #10b981)":"rgba(255,255,255,0.07)",color:otp.length===6?"white":"rgba(255,255,255,0.3)",fontSize:15,fontWeight:700,cursor:otp.length===6?"pointer":"default",transition:"all 0.2s" }}>
               {loading ? "Verifying..." : "Verify ✓"}
             </button>
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-              <button onClick={() => setStep("phone")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "none", color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer" }}>← Change number</button>
-              <button onClick={resendOTP} disabled={loading} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "none", color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer" }}>Resend OTP</button>
+            <div style={{ display:"flex",justifyContent:"space-between",marginTop:8 }}>
+              <button onClick={()=>setStep("phone")} style={{ flex:1,padding:"10px",borderRadius:10,border:"none",background:"none",color:"rgba(255,255,255,0.35)",fontSize:13,cursor:"pointer" }}>← Change number</button>
+              <button onClick={resendOTP} disabled={loading} style={{ flex:1,padding:"10px",borderRadius:10,border:"none",background:"none",color:"rgba(255,255,255,0.35)",fontSize:13,cursor:"pointer" }}>Resend OTP</button>
             </div>
           </>
         )}
@@ -969,57 +853,44 @@ function OTPModal({ onSuccess, onClose }) {
 function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCount, onClose, visible }) {
   return (
     <>
-      {visible && <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40 }} />}
-      <div style={{
-        position: "fixed", left: 0, top: 0, height: "100%", width: 260,
-        background: "#0d1117", borderRight: "1px solid rgba(255,255,255,0.07)",
-        display: "flex", flexDirection: "column", zIndex: 50,
-        transform: visible ? "translateX(0)" : "translateX(-100%)",
-        transition: "transform 0.3s cubic-bezier(0.4,0,0.2,1)"
-      }}>
-        <div style={{ padding: "20px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #059669, #10b981)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <HeartIcon />
-            </div>
+      {visible && <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:40 }} />}
+      <div style={{ position:"fixed",left:0,top:0,height:"100%",width:260,background:"#0d1117",borderRight:"1px solid rgba(255,255,255,0.07)",display:"flex",flexDirection:"column",zIndex:50,transform:visible?"translateX(0)":"translateX(-100%)",transition:"transform 0.3s cubic-bezier(0.4,0,0.2,1)" }}>
+        <div style={{ padding:"20px 16px 12px",borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:16 }}>
+            <div style={{ width:36,height:36,borderRadius:10,background:"linear-gradient(135deg, #059669, #10b981)",display:"flex",alignItems:"center",justifyContent:"center" }}><HeartIcon /></div>
             <div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: "white" }}>Anbu Health AI</div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>Medical Assistant</div>
+              <div style={{ fontSize:14,fontWeight:800,color:"white" }}>Anbu Health AI</div>
+              <div style={{ fontSize:11,color:"rgba(255,255,255,0.35)" }}>Medical Assistant</div>
             </div>
           </div>
-          <button onClick={onNewChat} style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.7)", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit", transition: "background 0.15s" }}>
+          <button onClick={onNewChat} style={{ width:"100%",padding:"9px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.7)",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:8,fontFamily:"inherit",transition:"background 0.15s" }}>
             <NewChatIcon /> New Chat
           </button>
         </div>
-
-        <div style={{ padding: "10px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Today's prompts</span>
-            <span style={{ fontSize: 11, color: promptCount >= MAX_PROMPTS ? "#ef4444" : "#10b981", fontWeight: 600 }}>{promptCount}/{MAX_PROMPTS}</span>
+        <div style={{ padding:"10px 16px",borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5 }}>
+            <span style={{ fontSize:11,color:"rgba(255,255,255,0.4)" }}>Today's prompts</span>
+            <span style={{ fontSize:11,color:promptCount>=MAX_PROMPTS?"#ef4444":"#10b981",fontWeight:600 }}>{promptCount}/{MAX_PROMPTS}</span>
           </div>
-          <div style={{ height: 4, background: "rgba(255,255,255,0.08)", borderRadius: 2, overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${Math.min((promptCount / MAX_PROMPTS) * 100, 100)}%`, background: promptCount >= MAX_PROMPTS ? "#ef4444" : "linear-gradient(90deg, #059669, #10b981)", borderRadius: 2, transition: "width 0.3s" }} />
+          <div style={{ height:4,background:"rgba(255,255,255,0.08)",borderRadius:2,overflow:"hidden" }}>
+            <div style={{ height:"100%",width:`${Math.min((promptCount/MAX_PROMPTS)*100,100)}%`,background:promptCount>=MAX_PROMPTS?"#ef4444":"linear-gradient(90deg, #059669, #10b981)",borderRadius:2,transition:"width 0.3s" }} />
           </div>
         </div>
-
-        <div style={{ flex: 1, overflowY: "auto", padding: "8px 8px" }}>
-          <p style={{ margin: "8px 8px 6px", fontSize: 10, color: "rgba(255,255,255,0.25)", textTransform: "uppercase", letterSpacing: 1 }}>Recent Chats</p>
-          {chats.map(chat => (
-            <button key={chat.id} onClick={() => { onSelectChat(chat.id); onClose(); }} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "none", background: chat.id === activeChatId ? "rgba(16,185,129,0.12)" : "none", color: chat.id === activeChatId ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.5)", fontSize: 13, cursor: "pointer", textAlign: "left", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8, marginBottom: 2, transition: "all 0.15s" }}>
+        <div style={{ flex:1,overflowY:"auto",padding:"8px 8px" }}>
+          <p style={{ margin:"8px 8px 6px",fontSize:10,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",letterSpacing:1 }}>Recent Chats</p>
+          {chats.map(chat=>(
+            <button key={chat.id} onClick={()=>{onSelectChat(chat.id);onClose();}} style={{ width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:chat.id===activeChatId?"rgba(16,185,129,0.12)":"none",color:chat.id===activeChatId?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.5)",fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8,marginBottom:2,transition:"all 0.15s" }}>
               <HistoryIcon />
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{chat.title}</span>
+              <span style={{ overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{chat.title}</span>
             </button>
           ))}
         </div>
-
         {user && (
-          <div style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <UserIcon />
-            </div>
+          <div style={{ padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",alignItems:"center",gap:10 }}>
+            <div style={{ width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg, #6366f1, #8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center" }}><UserIcon /></div>
             <div>
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>+91 {user.phone}</div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>Verified ✓</div>
+              <div style={{ fontSize:13,color:"rgba(255,255,255,0.8)",fontWeight:600 }}>+91 {user.phone}</div>
+              <div style={{ fontSize:11,color:"rgba(255,255,255,0.35)" }}>Verified ✓</div>
             </div>
           </div>
         )}
@@ -1030,32 +901,24 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCou
 
 function WelcomeScreen({ onQuickPrompt }) {
   const suggestions = [
-    { icon: "🩸", text: "Sugar test result explain பண்ணு" },
-    { icon: "💊", text: "Paracetamol dosage என்ன?" },
-    { icon: "❤️", text: "BP high-ஆ இருக்கு, என்ன சாப்பிடணும்?" },
-    { icon: "🤒", text: "Fever 3 days-ஆ இருக்கு, என்ன பண்றது?" },
+    { icon:"🩸",text:"Sugar test result explain பண்ணு" },
+    { icon:"💊",text:"Paracetamol dosage என்ன?" },
+    { icon:"❤️",text:"BP high-ஆ இருக்கு, என்ன சாப்பிடணும்?" },
+    { icon:"🤒",text:"Fever 3 days-ஆ இருக்கு, என்ன பண்றது?" },
   ];
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, padding: "20px 20px 0", textAlign: "center" }}>
-      <div style={{ width: 64, height: 64, borderRadius: 20, background: "linear-gradient(135deg, #059669, #10b981)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18, boxShadow: "0 12px 32px rgba(16,185,129,0.3)", animation: "pulse 2.5s infinite" }}>
-        <span style={{ fontSize: 32 }}>🏥</span>
+    <div style={{ display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1,padding:"20px 20px 0",textAlign:"center" }}>
+      <div style={{ width:64,height:64,borderRadius:20,background:"linear-gradient(135deg, #059669, #10b981)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:18,boxShadow:"0 12px 32px rgba(16,185,129,0.3)",animation:"pulse 2.5s infinite" }}>
+        <span style={{ fontSize:32 }}>🏥</span>
       </div>
-      <h1 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 800, color: "white" }}>Anbu Health AI</h1>
-      <p style={{ margin: "0 0 6px", fontSize: 14, color: "rgba(255,255,255,0.5)", maxWidth: 300, lineHeight: 1.6 }}>
-        Tamil Nadu village patients-க்கான AI medical assistant
-      </p>
-      <p style={{ margin: "0 0 28px", fontSize: 12, color: "rgba(255,255,255,0.25)" }}>Lab reports • X-Rays • Medicine info • Health questions</p>
-
-      <div style={{ width: "100%", maxWidth: 500 }}>
-        <p style={{ margin: "0 0 10px", fontSize: 11, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: 1 }}>இதை கேளுங்க</p>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          {suggestions.map((s, i) => (
-            <button key={i} onClick={() => onQuickPrompt(s.text)} style={{
-              padding: "11px 12px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.1)",
-              background: "rgba(255,255,255,0.03)", color: "rgba(255,255,255,0.6)", fontSize: 12, lineHeight: 1.5,
-              cursor: "pointer", textAlign: "left", fontFamily: "inherit", transition: "all 0.2s",
-              display: "flex", alignItems: "flex-start", gap: 8
-            }}>
+      <h1 style={{ margin:"0 0 8px",fontSize:22,fontWeight:800,color:"white" }}>Anbu Health AI</h1>
+      <p style={{ margin:"0 0 6px",fontSize:14,color:"rgba(255,255,255,0.5)",maxWidth:300,lineHeight:1.6 }}>Tamil Nadu village patients-க்கான AI medical assistant</p>
+      <p style={{ margin:"0 0 28px",fontSize:12,color:"rgba(255,255,255,0.25)" }}>Lab reports • X-Rays • Medicine info • Health questions</p>
+      <div style={{ width:"100%",maxWidth:500 }}>
+        <p style={{ margin:"0 0 10px",fontSize:11,color:"rgba(255,255,255,0.3)",textTransform:"uppercase",letterSpacing:1 }}>இதை கேளுங்க</p>
+        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8 }}>
+          {suggestions.map((s,i)=>(
+            <button key={i} onClick={()=>onQuickPrompt(s.text)} style={{ padding:"11px 12px",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.03)",color:"rgba(255,255,255,0.6)",fontSize:12,lineHeight:1.5,cursor:"pointer",textAlign:"left",fontFamily:"inherit",transition:"all 0.2s",display:"flex",alignItems:"flex-start",gap:8 }}>
               <span>{s.icon}</span><span>{s.text}</span>
             </button>
           ))}
@@ -1079,31 +942,25 @@ export default function AnbuHealthAI() {
   const [promptCount, setPromptCount] = useState(() => getPromptData().count);
   const [pendingFile, setPendingFile] = useState(null);
   const [pendingMode, setPendingMode] = useState(null);
-
-  const [chats, setChats] = useState([{ id: "c1", title: "New Chat", messages: [] }]);
+  const [chats, setChats] = useState([{ id:"c1",title:"New Chat",messages:[] }]);
   const [activeChatId, setActiveChatId] = useState("c1");
 
   const messagesEndRef = useRef(null);
-  const inputRef = useRef(null);
+  const inputRef       = useRef(null);
   const recognitionRef = useRef(null);
-  const handleSendRef = useRef(null);
+  const handleSendRef  = useRef(null);
 
   const activeChat = chats.find(c => c.id === activeChatId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const messages = useMemo(() => activeChat?.messages || [], [activeChatId, chats]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior:"smooth" }); }, [messages, isLoading]);
 
-  // Speech Recognition setup
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
-      rec.lang = "ta-IN";
-      rec.continuous = false;
-      rec.interimResults = false;
+      rec.lang = "ta-IN"; rec.continuous = false; rec.interimResults = false;
       rec.onend = () => setIsListening(false);
       rec.onerror = () => setIsListening(false);
       recognitionRef.current = rec;
@@ -1113,7 +970,7 @@ export default function AnbuHealthAI() {
   const addMessage = useCallback((chatId, msg) => {
     setChats(prev => prev.map(c => c.id === chatId ? {
       ...c,
-      title: c.messages.length === 0 ? (msg.content?.slice(0, 30) || "Chat") + "..." : c.title,
+      title: c.messages.length === 0 ? (msg.content?.slice(0,30)||"Chat")+"..." : c.title,
       messages: [...c.messages, msg]
     } : c));
   }, []);
@@ -1124,197 +981,128 @@ export default function AnbuHealthAI() {
     if (promptCount >= MAX_PROMPTS) return;
 
     const msgText = text || (pendingFile ? `${pendingFile.name} analyze பண்ணு` : "");
-    const userMsg = {
-      id: Date.now(), role: "user", content: msgText,
-      file: pendingFile?.name, fileMode: pendingMode,
-      timestamp: Date.now()
-    };
-
-    // Capture before clearing
+    const userMsg = { id:Date.now(),role:"user",content:msgText,file:pendingFile?.name,fileMode:pendingMode,timestamp:Date.now() };
     const fileForAPI = pendingFile;
     const modeForAPI = pendingMode;
-    const phone = user?.phone || null;
+    const phone      = user?.phone || null;
+    const authToken  = user?.authToken || null;
 
     addMessage(activeChatId, userMsg);
-    setInputText("");
-    setPendingFile(null);
-    setPendingMode(null);
-    setIsLoading(true);
+    setInputText(""); setPendingFile(null); setPendingMode(null); setIsLoading(true);
 
-    // Server-side count when logged in; localStorage fallback only without phone
-    if (!phone) {
-      const localCount = incrementPrompt();
-      setPromptCount(localCount);
-    }
+    if (!phone) { const localCount = incrementPrompt(); setPromptCount(localCount); }
 
     try {
-      const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId);
-      const botMsg = {
-        id: Date.now() + 1, role: "assistant",
-        content: result.answer,
-        structured: result.structured,
-        fileMode: modeForAPI,
-        timestamp: Date.now()
-      };
-      addMessage(activeChatId, botMsg);
-      // Server-side count (Supabase) is authoritative when available
-      if (result.prompts && typeof result.prompts.count === "number") {
-        setPromptCount(result.prompts.count);
-      }
+      const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId, authToken);
+      addMessage(activeChatId, { id:Date.now()+1,role:"assistant",content:result.answer,structured:result.structured,fileMode:modeForAPI,timestamp:Date.now() });
+      if (result.prompts && typeof result.prompts.count === "number") setPromptCount(result.prompts.count);
     } catch (e) {
       if (e.message === "DAILY_LIMIT") {
         if (e.prompts && typeof e.prompts.count === "number") setPromptCount(e.prompts.count);
         else setPromptCount(MAX_PROMPTS);
-        addMessage(activeChatId, {
-          id: Date.now() + 1, role: "assistant",
-          content: e.message_ta || "Today's 20 prompts முடிந்தது. நாளைக்கு வா! (Resets at midnight)",
-          timestamp: Date.now()
-        });
+        addMessage(activeChatId, { id:Date.now()+1,role:"assistant",content:e.message_ta||"Today's 20 prompts முடிந்தது. நாளைக்கு வா!",timestamp:Date.now() });
       } else {
-        addMessage(activeChatId, { id: Date.now() + 1, role: "assistant", content: "Sorry, error ஆச்சு. Try again.", timestamp: Date.now() });
+        addMessage(activeChatId, { id:Date.now()+1,role:"assistant",content:"Sorry, error ஆச்சு. Try again.",timestamp:Date.now() });
       }
-    } finally {
-      setIsLoading(false);
-    }
+    } finally { setIsLoading(false); }
   }, [inputText, pendingFile, pendingMode, promptCount, activeChatId, addMessage, user]);
 
-  // Keep ref always pointing to latest handleSend (fixes voice stale closure)
   handleSendRef.current = handleSend;
 
-  const handleUpload = (file, mode) => {
-    setPendingFile(file);
-    setPendingMode(mode);
-    setShowUploadModal(false);
-    inputRef.current?.focus();
-  };
+  const handleUpload = (file, mode) => { setPendingFile(file); setPendingMode(mode); setShowUploadModal(false); inputRef.current?.focus(); };
 
-  // ── 5. FIXED handleVoice — auto-submits after speech ─────────────────────
   const handleVoice = () => {
     if (!recognitionRef.current) { alert("Voice not supported in this browser"); return; }
-    if (isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-    } else {
+    if (isListening) { recognitionRef.current.stop(); setIsListening(false); }
+    else {
       recognitionRef.current.onresult = (e) => {
         const transcript = e.results[0][0].transcript;
-        setInputText(transcript);
-        setIsListening(false);
-        // Use ref — always calls latest handleSend, avoids stale closure
+        setInputText(transcript); setIsListening(false);
         setTimeout(() => handleSendRef.current(transcript), 300);
       };
-      recognitionRef.current.start();
-      setIsListening(true);
+      recognitionRef.current.start(); setIsListening(true);
     }
   };
 
   const handleNewChat = () => {
     const newId = `c${Date.now()}`;
-    setChats(prev => [{ id: newId, title: "New Chat", messages: [] }, ...prev]);
-    setActiveChatId(newId);
-    setSidebarOpen(false);
+    setChats(prev => [{ id:newId,title:"New Chat",messages:[] }, ...prev]);
+    setActiveChatId(newId); setSidebarOpen(false);
   };
 
-  // ── Login success — sync server prompt count + load Supabase chat history ──
   const handleLoginSuccess = useCallback(async (u) => {
-    setUser(u);
-    setShowOTP(false);
-
+    setUser(u); setShowOTP(false);
     if (u?.prompts && typeof u.prompts.count === "number") {
       setPromptCount(u.prompts.count);
     } else {
       try {
-        const status = await apiUserStatus(u.phone);
+        const status = await apiUserStatus(u.phone, u.authToken || null);
         if (status && typeof status.count === "number") setPromptCount(status.count);
-      } catch { /* localStorage fallback stays */ }
+      } catch {}
     }
-
     try {
-      const history = await apiUserHistory(u.phone);
+      const history = await apiUserHistory(u.phone, u.authToken || null);
       if (history.length > 0) {
-        // Group flat history into chats by chat_id (fallback: one chat)
         const grouped = {};
         history.forEach((m, i) => {
           const cid = m.chat_id || "history";
           if (!grouped[cid]) grouped[cid] = [];
-          grouped[cid].push({
-            id: m.id || `${cid}_${i}`,
-            role: m.role,
-            content: m.content,
-            structured: m.structured || null,
-            fileMode: m.mode,
-            timestamp: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
-          });
+          grouped[cid].push({ id:m.id||`${cid}_${i}`,role:m.role,content:m.content,structured:m.structured||null,fileMode:m.mode,timestamp:m.created_at?new Date(m.created_at).getTime():Date.now() });
         });
-        const restoredChats = Object.entries(grouped).map(([cid, msgs], idx) => ({
-          id: cid,
-          title: (msgs[0]?.content || "Chat").slice(0, 30) + "...",
-          messages: msgs,
-        }));
+        const restoredChats = Object.entries(grouped).map(([cid,msgs])=>({ id:cid,title:(msgs[0]?.content||"Chat").slice(0,30)+"...",messages:msgs }));
         setChats(prev => [...restoredChats, ...prev]);
         setActiveChatId(restoredChats[0].id);
       }
-    } catch (e) {
-      // Supabase not configured or history fetch failed — not fatal
-    }
+    } catch {}
   }, []);
 
   const plusMenuItems = [
-    { icon: <LabIcon />,  label: "Lab Report",   sublabel: "Blood test, sugar, urine",  color: "#60a5fa", mode: "lab" },
-    { icon: <ScanIcon />, label: "X-Ray / Scan",  sublabel: "Chest, abdomen, MRI",       color: "#a78bfa", mode: "scan" },
-    { icon: <PillIcon />, label: "Medicine",      sublabel: "Photo of medicine strip",   color: "#34d399", mode: "medicine" },
+    { icon:<LabIcon />,  label:"Lab Report",  sublabel:"Blood test, sugar, urine", color:"#60a5fa",mode:"lab" },
+    { icon:<ScanIcon />, label:"X-Ray / Scan", sublabel:"Chest, abdomen, MRI",      color:"#a78bfa",mode:"scan" },
+    { icon:<PillIcon />, label:"Medicine",     sublabel:"Photo of medicine strip",  color:"#34d399",mode:"medicine" },
   ];
 
   return (
-    <div style={{ height: "100vh", background: "#0f1117", display: "flex", flexDirection: "column", fontFamily: "'Segoe UI', system-ui, sans-serif", overflow: "hidden", position: "relative" }}>
+    <div style={{ height:"100vh",background:"#0f1117",display:"flex",flexDirection:"column",fontFamily:"'Segoe UI', system-ui, sans-serif",overflow:"hidden",position:"relative" }}>
       <style>{`
-        @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes bounce { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }
-        @keyframes pulse { 0%, 100% { box-shadow: 0 12px 32px rgba(16,185,129,0.3); } 50% { box-shadow: 0 12px 48px rgba(16,185,129,0.55); } }
-        * { box-sizing: border-box; }
-        input, button { font-family: inherit; }
-        textarea:focus { outline: none; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+        @keyframes slideUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes bounce { 0%,80%,100% { transform:scale(0.6); opacity:0.4; } 40% { transform:scale(1); opacity:1; } }
+        @keyframes pulse { 0%,100% { box-shadow:0 12px 32px rgba(16,185,129,0.3); } 50% { box-shadow:0 12px 48px rgba(16,185,129,0.55); } }
+        * { box-sizing:border-box; } input,button { font-family:inherit; } textarea:focus { outline:none; }
+        ::-webkit-scrollbar { width:4px; } ::-webkit-scrollbar-track { background:transparent; }
+        ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.1); border-radius:2px; }
       `}</style>
 
       {showOTP && <OTPModal onSuccess={handleLoginSuccess} onClose={() => setShowOTP(false)} />}
 
-      <Sidebar
-        visible={sidebarOpen} onClose={() => setSidebarOpen(false)}
-        chats={chats} activeChatId={activeChatId}
-        onNewChat={handleNewChat} onSelectChat={setActiveChatId}
-        user={user} promptCount={promptCount}
-      />
-
-      {showUploadModal && <UploadModal mode={uploadMode} onClose={() => setShowUploadModal(false)} onUpload={handleUpload} />}
-
-      {showPlusMenu && <div onClick={() => setShowPlusMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 20 }} />}
+      <Sidebar visible={sidebarOpen} onClose={()=>setSidebarOpen(false)} chats={chats} activeChatId={activeChatId} onNewChat={handleNewChat} onSelectChat={setActiveChatId} user={user} promptCount={promptCount} />
+      {showUploadModal && <UploadModal mode={uploadMode} onClose={()=>setShowUploadModal(false)} onUpload={handleUpload} />}
+      {showPlusMenu && <div onClick={()=>setShowPlusMenu(false)} style={{ position:"fixed",inset:0,zIndex:20 }} />}
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.07)", background: "#0f1117", flexShrink: 0 }}>
-        <button onClick={() => setSidebarOpen(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: 8, borderRadius: 8, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center" }}>
+      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.07)",background:"#0f1117",flexShrink:0 }}>
+        <button onClick={()=>setSidebarOpen(true)} style={{ background:"none",border:"none",cursor:"pointer",padding:8,borderRadius:8,color:"rgba(255,255,255,0.6)",display:"flex",alignItems:"center" }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
         </button>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg, #059669, #10b981)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>🏥</div>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "white" }}>Anbu Health AI</span>
+        <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+          <div style={{ width:28,height:28,borderRadius:8,background:"linear-gradient(135deg, #059669, #10b981)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14 }}>🏥</div>
+          <span style={{ fontSize:15,fontWeight:700,color:"white" }}>Anbu Health AI</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 20, padding: "4px 10px" }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
-          <span style={{ fontSize: 11, color: "#10b981", fontWeight: 600 }}>Live</span>
+        <div style={{ display:"flex",alignItems:"center",gap:6,background:"rgba(16,185,129,0.1)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:20,padding:"4px 10px" }}>
+          <div style={{ width:6,height:6,borderRadius:"50%",background:"#10b981" }} />
+          <span style={{ fontSize:11,color:"#10b981",fontWeight:600 }}>Live</span>
         </div>
       </div>
 
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px 16px 8px" }}>
-        <div style={{ maxWidth: 680, margin: "0 auto" }}>
+      <div style={{ flex:1,overflowY:"auto",padding:"16px 16px 8px" }}>
+        <div style={{ maxWidth:680,margin:"0 auto" }}>
           {messages.length === 0 ? (
-            <WelcomeScreen onQuickPrompt={(text) => { setInputText(text); setTimeout(() => handleSend(text), 100); }} />
+            <WelcomeScreen onQuickPrompt={(text)=>{ setInputText(text); setTimeout(()=>handleSend(text),100); }} />
           ) : (
             <>
-              {messages.map((msg, i) => (
-                <MessageBubble key={msg.id} msg={msg} isLast={i === messages.length - 1} onFollowUp={(text) => { setInputText(text); setTimeout(() => handleSend(text), 100); }} />
+              {messages.map((msg,i)=>(
+                <MessageBubble key={msg.id} msg={msg} isLast={i===messages.length-1} onFollowUp={(text)=>{ setInputText(text); setTimeout(()=>handleSend(text),100); }} />
               ))}
               {isLoading && <TypingIndicator />}
             </>
@@ -1325,49 +1113,43 @@ export default function AnbuHealthAI() {
 
       {/* Pending file chip */}
       {pendingFile && (
-        <div style={{ padding: "0 16px 8px", maxWidth: 696, margin: "0 auto", width: "100%" }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: 20, padding: "5px 12px" }}>
-            <span style={{ fontSize: 13 }}>{pendingMode === "lab" ? "🧪" : pendingMode === "scan" ? "🩻" : "💊"}</span>
-            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>{pendingFile.name}</span>
-            <button onClick={() => { setPendingFile(null); setPendingMode(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.4)", padding: 0, display: "flex" }}><CloseIcon /></button>
+        <div style={{ padding:"0 16px 8px",maxWidth:696,margin:"0 auto",width:"100%" }}>
+          <div style={{ display:"inline-flex",alignItems:"center",gap:8,background:"rgba(16,185,129,0.12)",border:"1px solid rgba(16,185,129,0.25)",borderRadius:20,padding:"5px 12px" }}>
+            <span style={{ fontSize:13 }}>{pendingMode==="lab"?"🧪":pendingMode==="scan"?"🩻":"💊"}</span>
+            <span style={{ fontSize:12,color:"rgba(255,255,255,0.7)" }}>{pendingFile.name}</span>
+            <button onClick={()=>{ setPendingFile(null); setPendingMode(null); }} style={{ background:"none",border:"none",cursor:"pointer",color:"rgba(255,255,255,0.4)",padding:0,display:"flex" }}><CloseIcon /></button>
           </div>
         </div>
       )}
 
       {/* Prompt limit warning */}
       {promptCount >= MAX_PROMPTS && (
-        <div style={{ padding: "8px 16px", maxWidth: 696, margin: "0 auto", width: "100%" }}>
-          <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, padding: "8px 14px", fontSize: 12, color: "#fca5a5", textAlign: "center" }}>
+        <div style={{ padding:"8px 16px",maxWidth:696,margin:"0 auto",width:"100%" }}>
+          <div style={{ background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:10,padding:"8px 14px",fontSize:12,color:"#fca5a5",textAlign:"center" }}>
             ⚠️ Today's 20 prompts மொத்தமும் use ஆயிட்டு. நாளைக்கு வா! (Resets at midnight)
           </div>
         </div>
       )}
 
       {/* Input Area */}
-      <div style={{ padding: "8px 16px 16px", flexShrink: 0, maxWidth: 696, margin: "0 auto", width: "100%" }}>
-        <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 16, display: "flex", alignItems: "flex-end", gap: 4, padding: "10px 12px" }}>
-
-          {/* Plus button */}
-          <div style={{ position: "relative", flexShrink: 0 }}>
-            <button
-              onClick={() => setShowPlusMenu(p => !p)}
-              style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: showPlusMenu ? "rgba(16,185,129,0.2)" : "rgba(255,255,255,0.07)", color: showPlusMenu ? "#10b981" : "rgba(255,255,255,0.5)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s", transform: showPlusMenu ? "rotate(45deg)" : "none" }}
-            >
+      <div style={{ padding:"8px 16px 16px",flexShrink:0,maxWidth:696,margin:"0 auto",width:"100%" }}>
+        <div style={{ background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:16,display:"flex",alignItems:"flex-end",gap:4,padding:"10px 12px" }}>
+          <div style={{ position:"relative",flexShrink:0 }}>
+            <button onClick={()=>setShowPlusMenu(p=>!p)}
+              style={{ width:36,height:36,borderRadius:10,border:"none",background:showPlusMenu?"rgba(16,185,129,0.2)":"rgba(255,255,255,0.07)",color:showPlusMenu?"#10b981":"rgba(255,255,255,0.5)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",transform:showPlusMenu?"rotate(45deg)":"none" }}>
               <PlusIcon />
             </button>
-
             {showPlusMenu && (
-              <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: 0, background: "#1a1f2e", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: 8, minWidth: 220, zIndex: 30, animation: "slideUp 0.2s ease", boxShadow: "0 16px 48px rgba(0,0,0,0.5)" }}>
-                {plusMenuItems.map(item => (
-                  <button key={item.mode} onClick={() => { setUploadMode(item.mode); setShowUploadModal(true); setShowPlusMenu(false); }}
-                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "none", background: "none", color: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit", transition: "background 0.15s" }}
-                    onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
-                    onMouseLeave={e => e.currentTarget.style.background = "none"}
-                  >
-                    <span style={{ color: item.color }}>{item.icon}</span>
-                    <div style={{ textAlign: "left" }}>
-                      <div style={{ fontSize: 14, fontWeight: 600 }}>{item.label}</div>
-                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>{item.sublabel}</div>
+              <div style={{ position:"absolute",bottom:"calc(100% + 8px)",left:0,background:"#1a1f2e",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,padding:8,minWidth:220,zIndex:30,animation:"slideUp 0.2s ease",boxShadow:"0 16px 48px rgba(0,0,0,0.5)" }}>
+                {plusMenuItems.map(item=>(
+                  <button key={item.mode} onClick={()=>{ setUploadMode(item.mode); setShowUploadModal(true); setShowPlusMenu(false); }}
+                    style={{ width:"100%",padding:"10px 12px",borderRadius:10,border:"none",background:"none",color:"white",cursor:"pointer",display:"flex",alignItems:"center",gap:10,fontFamily:"inherit",transition:"background 0.15s" }}
+                    onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.05)"}
+                    onMouseLeave={e=>e.currentTarget.style.background="none"}>
+                    <span style={{ color:item.color }}>{item.icon}</span>
+                    <div style={{ textAlign:"left" }}>
+                      <div style={{ fontSize:14,fontWeight:600 }}>{item.label}</div>
+                      <div style={{ fontSize:11,color:"rgba(255,255,255,0.35)" }}>{item.sublabel}</div>
                     </div>
                   </button>
                 ))}
@@ -1375,44 +1157,23 @@ export default function AnbuHealthAI() {
             )}
           </div>
 
-          {/* Text input */}
-          <textarea
-            ref={inputRef}
-            value={inputText}
-            onChange={e => setInputText(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder={isListening ? "🎤 Listening... (Tamil/English)" : "கேள்வி கேளுங்க... (Tamil or English)"}
-            rows={1}
-            disabled={promptCount >= MAX_PROMPTS}
-            style={{ flex: 1, background: "none", border: "none", color: "rgba(255,255,255,0.9)", fontSize: 14, lineHeight: 1.5, resize: "none", padding: "8px 4px", maxHeight: 120, overflowY: "auto", outline: "none", opacity: promptCount >= MAX_PROMPTS ? 0.4 : 1 }}
-          />
+          <textarea ref={inputRef} value={inputText} onChange={e=>setInputText(e.target.value)}
+            onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); handleSend(); } }}
+            placeholder={isListening?"🎤 Listening... (Tamil/English)":"கேள்வி கேளுங்க... (Tamil or English)"}
+            rows={1} disabled={promptCount>=MAX_PROMPTS}
+            style={{ flex:1,background:"none",border:"none",color:"rgba(255,255,255,0.9)",fontSize:14,lineHeight:1.5,resize:"none",padding:"8px 4px",maxHeight:120,overflowY:"auto",outline:"none",opacity:promptCount>=MAX_PROMPTS?0.4:1 }} />
 
-          {/* Mic */}
-          <button
-            onClick={handleVoice}
-            style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: isListening ? "rgba(239,68,68,0.2)" : "rgba(255,255,255,0.07)", color: isListening ? "#ef4444" : "rgba(255,255,255,0.5)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s" }}
-          >
+          <button onClick={handleVoice}
+            style={{ width:36,height:36,borderRadius:10,border:"none",background:isListening?"rgba(239,68,68,0.2)":"rgba(255,255,255,0.07)",color:isListening?"#ef4444":"rgba(255,255,255,0.5)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.2s" }}>
             <MicIcon active={isListening} />
           </button>
 
-          {/* Send */}
-          <button
-            onClick={() => handleSend()}
-            disabled={(!inputText.trim() && !pendingFile) || isLoading || promptCount >= MAX_PROMPTS}
-            style={{
-              width: 36, height: 36, borderRadius: 10, border: "none",
-              background: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "linear-gradient(135deg, #059669, #10b981)" : "rgba(255,255,255,0.07)",
-              color: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "white" : "rgba(255,255,255,0.25)",
-              cursor: (inputText.trim() || pendingFile) && !isLoading && promptCount < MAX_PROMPTS ? "pointer" : "default",
-              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s",
-              boxShadow: (inputText.trim() || pendingFile) && !isLoading ? "0 4px 12px rgba(16,185,129,0.3)" : "none"
-            }}
-          >
+          <button onClick={()=>handleSend()} disabled={(!inputText.trim()&&!pendingFile)||isLoading||promptCount>=MAX_PROMPTS}
+            style={{ width:36,height:36,borderRadius:10,border:"none",background:(inputText.trim()||pendingFile)&&!isLoading&&promptCount<MAX_PROMPTS?"linear-gradient(135deg, #059669, #10b981)":"rgba(255,255,255,0.07)",color:(inputText.trim()||pendingFile)&&!isLoading&&promptCount<MAX_PROMPTS?"white":"rgba(255,255,255,0.25)",cursor:(inputText.trim()||pendingFile)&&!isLoading&&promptCount<MAX_PROMPTS?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.2s",boxShadow:(inputText.trim()||pendingFile)&&!isLoading?"0 4px 12px rgba(16,185,129,0.3)":"none" }}>
             <SendIcon />
           </button>
         </div>
-
-        <p style={{ margin: "8px 0 0", fontSize: 11, color: "rgba(255,255,255,0.2)", textAlign: "center" }}>
+        <p style={{ margin:"8px 0 0",fontSize:11,color:"rgba(255,255,255,0.2)",textAlign:"center" }}>
           Anbu AI is for information only • Doctor advice மட்டும் follow பண்ணுங்க
         </p>
       </div>
