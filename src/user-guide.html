@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>அன்பு Health AI - User Guide</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #0a0a0a; color: #e0e0e0; }
+  .header { background: linear-gradient(135deg, #00c896, #007a5e); padding: 30px 20px; text-align: center; }
+  .header h1 { font-size: 2em; color: white; }
+  .header .clinic { color: #d0fff0; margin-top: 6px; font-size: 1.1em; }
+  .header .doctor { color: white; margin-top: 4px; font-size: 0.95em; opacity: 0.9; }
+  .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+  .card { background: #1a1a2e; border-radius: 16px; padding: 24px; margin: 20px 0; border-left: 4px solid #00c896; }
+  .card h2 { color: #00c896; font-size: 1.2em; margin-bottom: 16px; }
+  .step { display: flex; gap: 16px; margin: 14px 0; align-items: flex-start; }
+  .step-num { background: #00c896; color: #000; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0; font-size: 0.9em; }
+  .step-text { flex: 1; line-height: 1.7; }
+  .step-text strong { color: #00c896; }
+  .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .feature { background: #0d1117; border-radius: 12px; padding: 16px; text-align: center; }
+  .feature .icon { font-size: 2em; margin-bottom: 8px; }
+  .feature h3 { color: #00c896; font-size: 0.95em; margin-bottom: 6px; }
+  .feature p { font-size: 0.85em; color: #aaa; line-height: 1.5; }
+  .tip { background: #1a2a1a; border-radius: 10px; padding: 14px; margin: 10px 0; border-left: 3px solid #4caf50; font-size: 0.9em; line-height: 1.6; }
+  .tip strong { color: #4caf50; }
+  .warning { background: #2a1a1a; border-radius: 10px; padding: 14px; margin: 10px 0; border-left: 3px solid #ff6b6b; font-size: 0.9em; line-height: 1.6; }
+  .warning strong { color: #ff6b6b; }
+  .url-box { background: #0d1117; border-radius: 10px; padding: 20px; text-align: center; margin: 16px 0; }
+  .url-box a { color: #00c896; font-size: 1.1em; text-decoration: none; font-weight: bold; }
+  .otp-box { background: #1a1a2e; border: 2px dashed #00c896; border-radius: 10px; padding: 16px; text-align: center; margin: 16px 0; }
+  .otp-box .otp { font-size: 2.5em; font-weight: bold; color: #00c896; letter-spacing: 8px; }
+  .otp-box p { color: #aaa; font-size: 0.85em; margin-top: 8px; }
+  .example { background: #0d1117; border-radius: 10px; padding: 14px; margin: 10px 0; font-size: 0.9em; line-height: 1.6; }
+  .example .q { color: #aaa; margin-bottom: 4px; }
+  .example .a { color: #00c896; }
+  .contact-box { background: #0d1117; border-radius: 12px; padding: 20px; }
+  .contact-row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #222; }
+  .contact-row:last-child { border-bottom: none; }
+  .contact-label { color: #aaa; font-size: 0.85em; width: 120px; flex-shrink: 0; }
+  .contact-value { color: #e0e0e0; font-size: 0.95em; }
+  .badge { display: inline-block; background: #00c896; color: #000; padding: 3px 10px; border-radius: 20px; font-size: 0.75em; font-weight: bold; margin-left: 8px; }
+  .whatsapp-msg { background: #1a2e1a; border-radius: 12px; padding: 20px; font-family: monospace; font-size: 0.9em; line-height: 1.8; border: 1px solid #2a4a2a; }
+  footer { text-align: center; padding: 30px; color: #555; font-size: 0.85em; line-height: 1.8; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>❤️ அன்பு Health AI</h1>
+  <div class="clinic">🏥 அன்பு Clinic, பாப்பாக்குடி, அரியலூர் மாவட்டம்</div>
+  <div class="doctor">AI-Powered Patient Health Assistant</div>
+</div>
+
+<div class="container">
+
+  <!-- App Link -->
+  <div class="card">
+    <h2>🌐 App Link</h2>
+    <div class="url-box">
+      <a href="https://rajaganaa.github.io/anbu-health-ai/" target="_blank">
+        rajaganaa.github.io/anbu-health-ai
+      </a>
+      <p style="color:#aaa; font-size:0.85em; margin-top:10px;">இந்த link-ஐ phone-ல bookmark செய்யுங்கள்</p>
+    </div>
+  </div>
+
+  <!-- Login Steps -->
+  <div class="card">
+    <h2>📱 எப்படி Login செய்வது?</h2>
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-text">
+        <strong>App திறக்கவும்</strong><br>
+        மேலே உள்ள link-ஐ phone browser-ல திறக்கவும்
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-text">
+        <strong>Phone Number போடுங்கள்</strong><br>
+        உங்கள் 10 digit mobile number போடுங்கள்<br>
+        <span style="color:#aaa; font-size:0.85em;">Example: 9876543210</span>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-text">
+        <strong>"OTP அனுப்பு" button click செய்யுங்கள்</strong>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-text">
+        <strong>இந்த OTP போடுங்கள்:</strong>
+        <div class="otp-box">
+          <div class="otp">1 2 3 4 5 6</div>
+          <p>இப்போது எந்த 6 digits-உம் போடலாம்</p>
+        </div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-text">
+        <strong>Verify click → உள்ளே வாருங்கள்!</strong> ✅
+      </div>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <div class="card">
+    <h2>🏥 என்ன கேட்கலாம்?</h2>
+    <div class="feature-grid">
+      <div class="feature">
+        <div class="icon">🧪</div>
+        <h3>Lab Report</h3>
+        <p>Blood test results photo எடுத்து upload செய்து கேளுங்கள்</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🩻</div>
+        <h3>Scan Report</h3>
+        <p>X-ray, ultrasound scan reports பற்றி கேளுங்கள்</p>
+      </div>
+      <div class="feature">
+        <div class="icon">💊</div>
+        <h3>Medicine</h3>
+        <p>மருந்தின் பெயர் கொடுத்து uses, side effects கேளுங்கள்</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🩺</div>
+        <h3>General Health</h3>
+        <p>எந்த health கேள்வியும் Tamil-ல கேளுங்கள்</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Examples -->
+  <div class="card">
+    <h2>💬 இப்படி கேளுங்கள்</h2>
+    <div class="example">
+      <div class="q">🧪 Lab Report:</div>
+      <div class="a">"என் blood sugar fasting 145 — இது normal-ஆ?"</div>
+    </div>
+    <div class="example">
+      <div class="q">💊 Medicine:</div>
+      <div class="a">"Metformin 500mg எதற்கு பயன்படுகிறது?"</div>
+    </div>
+    <div class="example">
+      <div class="q">🩺 General:</div>
+      <div class="a">"குழந்தைக்கு காய்ச்சல் 101°F — என்ன பண்ணணும்?"</div>
+    </div>
+    <div class="example">
+      <div class="q">🩻 Scan:</div>
+      <div class="a">"Fatty liver grade 1 சொன்னாங்க — என்ன meaning?"</div>
+    </div>
+  </div>
+
+  <!-- Important Notes -->
+  <div class="card">
+    <h2>⚠️ முக்கியமான விஷயங்கள்</h2>
+    <div class="warning">
+      <strong>⚠️ கவனம்:</strong> இந்த AI ஒரு information assistant மட்டும். Emergency மற்றும் கடுமையான நோய்க்கு உடனே doctor-ஐ சந்தியுங்கள்.
+    </div>
+    <div class="tip"><strong>✅ தினசரி Limit:</strong> ஒரு நாளில் 20 கேள்விகள் கேட்கலாம்</div>
+    <div class="tip"><strong>✅ மொழி:</strong> Tamil மற்றும் English இரண்டிலும் கேட்கலாம்</div>
+    <div class="tip"><strong>✅ History:</strong> உங்கள் பழைய கேள்விகள் save ஆகும்</div>
+    <div class="tip"><strong>✅ Privacy:</strong> உங்கள் தகவல்கள் பாதுகாப்பாக இருக்கும்</div>
+  </div>
+
+  <!-- Contact -->
+  <div class="card">
+    <h2>📞 தொடர்பு கொள்ளுங்கள்</h2>
+    <div class="contact-box">
+      <div class="contact-row">
+        <div class="contact-label">Clinic</div>
+        <div class="contact-value">அன்பு Clinic, பாப்பாக்குடி, அரியலூர் மாவட்டம்</div>
+      </div>
+      <div class="contact-row">
+        <div class="contact-label">Dr. Raghul</div>
+        <div class="contact-value">M.D, Assistant Professor <span class="badge">📞 8838843878</span></div>
+      </div>
+      <div class="contact-row">
+        <div class="contact-label">Dr. Rajeswari</div>
+        <div class="contact-value">M.D <span class="badge">📞 9176634174</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WhatsApp Share Message -->
+  <div class="card">
+    <h2>📤 Patients-க்கு Share செய்யும் Message</h2>
+    <div class="whatsapp-msg">
+🏥 அன்பு Clinic — AI Health Assistant
+
+நமது clinic-ல் இப்போது AI assistant கிடைக்கிறது!
+
+👉 rajaganaa.github.io/anbu-health-ai
+
+✅ Lab reports பற்றி கேளுங்கள்
+✅ Medicine பற்றி கேளுங்கள்
+✅ Health doubts கேளுங்கள்
+✅ Tamil-ல பதில் கிடைக்கும்!
+
+Login:
+1. Link திறக்கவும்
+2. Phone number போடுங்கள்
+3. OTP: 123456 போடுங்கள்
+4. கேள்விகள் கேளுங்கள்! 🩺
+
+— அன்பு Clinic, பாப்பாக்குடி
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  ❤️ அன்பு Health AI — Patent: 202641043947<br>
+  அன்பு Clinic, பாப்பாக்குடி, அரியலூர் மாவட்டம்
+</footer>
+
+</body>
+</html>
