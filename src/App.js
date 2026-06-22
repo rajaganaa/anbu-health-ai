@@ -1213,7 +1213,7 @@ function OTPModal({ onSuccess, onClose }) {
             <HeartIcon />
           </div>
           <h2 style={{ margin:0,fontSize:22,fontWeight:800,color:"white" }}>Anbu Health AI</h2>
-          <p style={{ margin:"6px 0 0",fontSize:13,color:"rgba(255,255,255,0.4)" }}>Tamil Nadu Village Healthcare</p>
+          <p style={{ margin:"6px 0 0",fontSize:13,color:"rgba(255,255,255,0.4)" }}>Anbu clinic Village Healthcare</p>
         </div>
 
         {step === "success" ? (
