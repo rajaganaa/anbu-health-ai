@@ -1324,7 +1324,7 @@ function WelcomeScreen({ onQuickPrompt }) {
         <span style={{ fontSize:32 }}>🏥</span>
       </div>
       <h1 style={{ margin:"0 0 8px",fontSize:22,fontWeight:800,color:"white" }}>Anbu Health AI</h1>
-      <p style={{ margin:"0 0 6px",fontSize:14,color:"rgba(255,255,255,0.5)",maxWidth:300,lineHeight:1.6 }}>Tamil Nadu village patients-க்கான AI medical assistant</p>
+      <p style={{ margin:"0 0 6px",fontSize:14,color:"rgba(255,255,255,0.5)",maxWidth:300,lineHeight:1.6 }}>Anbu Clinic Rural patients-க்கான AI medical assistant</p>
       <p style={{ margin:"0 0 28px",fontSize:12,color:"rgba(255,255,255,0.25)" }}>Lab reports • X-Rays • Medicine info • Health questions</p>
       <div style={{ width:"100%",maxWidth:500 }}>
         <p style={{ margin:"0 0 10px",fontSize:11,color:"rgba(255,255,255,0.3)",textTransform:"uppercase",letterSpacing:1 }}>இதை கேளுங்க</p>
