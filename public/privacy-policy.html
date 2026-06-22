@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — Anbu Health AI</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #e2e8f0; line-height: 1.7; }
+    .container { max-width: 720px; margin: 0 auto; padding: 40px 20px 80px; }
+    h1 { font-size: 26px; color: #10b981; margin-bottom: 6px; }
+    .subtitle { font-size: 13px; color: rgba(255,255,255,0.4); margin-bottom: 36px; }
+    h2 { font-size: 16px; color: #6ee7b7; margin: 32px 0 10px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,0.07); }
+    p, li { font-size: 14px; color: rgba(255,255,255,0.7); margin-bottom: 10px; }
+    ul { padding-left: 20px; }
+    .highlight { background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2); border-radius: 8px; padding: 14px 16px; margin: 16px 0; }
+    .warning { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2); border-radius: 8px; padding: 14px 16px; margin: 16px 0; }
+    .warning p { color: #fca5a5; }
+    a { color: #10b981; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+    th { background: rgba(255,255,255,0.05); color: #6ee7b7; padding: 10px 12px; text-align: left; border: 1px solid rgba(255,255,255,0.08); }
+    td { padding: 9px 12px; border: 1px solid rgba(255,255,255,0.07); color: rgba(255,255,255,0.65); }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>🔒 Privacy Policy</h1>
+  <p class="subtitle">
+    Anbu Health AI | Effective Date: June 2026 | Version 1.0<br>
+    Patent: 202641043947 | Author: Rajaganapathy M, SRM University
+  </p>
+
+  <div class="warning">
+    <p><strong>⚠️ Medical Disclaimer:</strong> Anbu Health AI provides general health information only.
+    It is NOT a substitute for a Registered Medical Practitioner (RMP / Doctor).
+    In an emergency, call <strong>108</strong>.</p>
+  </div>
+
+  <h2>1. Who We Are</h2>
+  <p>Anbu Health AI is an AI-powered health information service designed for Tamil Nadu village patients.
+  We provide health education — not medical diagnosis, treatment, or prescriptions.</p>
+  <p>Contact: <a href="mailto:grievance@anbuhealth.ai">grievance@anbuhealth.ai</a></p>
+
+  <h2>2. What Data We Collect (DPDP Act 2023, Section 2)</h2>
+  <table>
+    <tr><th>Data</th><th>Why</th><th>Stored Where</th></tr>
+    <tr><td>Phone number</td><td>Authentication (OTP login)</td><td>Supabase (encrypted)</td></tr>
+    <tr><td>Health questions (text)</td><td>To generate AI responses</td><td>Supabase (encrypted)</td></tr>
+    <tr><td>Uploaded images (lab reports, scans, medicine photos)</td><td>AI analysis only — deleted immediately after</td><td>Azure temporary storage — auto-deleted after each request</td></tr>
+    <tr><td>Chat history</td><td>To show your past conversations</td><td>Supabase — auto-deleted after 90 days</td></tr>
+    <tr><td>Usage count (prompts/day)</td><td>Fair usage enforcement (20/day limit)</td><td>Supabase</td></tr>
+    <tr><td>Consent records</td><td>DPDP Act 2023 compliance</td><td>Supabase</td></tr>
+  </table>
+  <p><strong>We do NOT collect:</strong> Aadhaar numbers, PAN cards, bank details, location, contacts, or any data beyond what's listed above.</p>
+
+  <h2>3. Legal Basis for Processing (DPDP Act 2023, Section 4 & 6)</h2>
+  <div class="highlight">
+    <p>We process your data only after you give <strong>free, informed, specific, and unconditional consent</strong>
+    on first use. You can withdraw consent and delete all your data at any time (see Section 7).</p>
+  </div>
+
+  <h2>4. How We Use Your Data</h2>
+  <ul>
+    <li>Generating AI health information responses to your questions</li>
+    <li>Maintaining your chat history for your convenience</li>
+    <li>Enforcing the daily usage limit (20 prompts/day)</li>
+    <li>Improving our AI models (aggregated, anonymised data only)</li>
+    <li>Complying with India's laws and regulations</li>
+  </ul>
+  <p><strong>We never:</strong> sell your data, share it with advertisers, or use it for any purpose other than above.</p>
+
+  <h2>5. Data Sharing</h2>
+  <table>
+    <tr><th>Service</th><th>Purpose</th><th>Location</th></tr>
+    <tr><td>Groq (AI inference)</td><td>Processing your health questions</td><td>USA (contractual privacy)</td></tr>
+    <tr><td>Azure Container Apps</td><td>Hosting our backend</td><td>Central India</td></tr>
+    <tr><td>Supabase</td><td>Database (chat history, users)</td><td>Singapore</td></tr>
+    <tr><td>Firebase (Google)</td><td>Phone OTP authentication</td><td>USA (contractual privacy)</td></tr>
+    <tr><td>Qdrant Cloud</td><td>Medical knowledge vector search</td><td>Germany</td></tr>
+  </table>
+  <p>All third-party services are bound by their own privacy policies and data processing agreements.</p>
+
+  <h2>6. Data Retention</h2>
+  <ul>
+    <li><strong>Chat history:</strong> 90 days, then permanently deleted</li>
+    <li><strong>Uploaded images:</strong> Deleted immediately after AI processing (within seconds)</li>
+    <li><strong>Phone number & account:</strong> Until you delete your account</li>
+    <li><strong>Usage records:</strong> 30 days</li>
+  </ul>
+
+  <h2>7. Your Rights (DPDP Act 2023, Sections 11–13)</h2>
+  <div class="highlight">
+    <p>Under India's Digital Personal Data Protection Act 2023, you have the right to:</p>
+    <ul style="margin-top:8px">
+      <li><strong>Access:</strong> See what data we hold about you</li>
+      <li><strong>Correction:</strong> Correct any inaccurate data</li>
+      <li><strong>Erasure:</strong> Delete all your data permanently (use "Delete My Data" in app Settings)</li>
+      <li><strong>Grievance:</strong> File a complaint with our Grievance Officer</li>
+      <li><strong>Nominee:</strong> Designate someone to exercise your rights</li>
+    </ul>
+    <p style="margin-top:8px">To exercise rights: <a href="mailto:grievance@anbuhealth.ai">grievance@anbuhealth.ai</a></p>
+  </div>
+
+  <h2>8. Grievance Officer (IT Rules 2021, Rule 4)</h2>
+  <p><strong>Name:</strong> Rajaganapathy M</p>
+  <p><strong>Email:</strong> <a href="mailto:grievance@anbuhealth.ai">grievance@anbuhealth.ai</a></p>
+  <p><strong>Response time:</strong> Acknowledgement within 24 hours | Resolution within 15 working days</p>
+  <p>You may also escalate to the Data Protection Board of India once established under the DPDP Act 2023.</p>
+
+  <h2>9. Security</h2>
+  <ul>
+    <li>All data encrypted in transit (HTTPS/TLS) and at rest (AES-256)</li>
+    <li>Database access protected by Row Level Security (Supabase RLS)</li>
+    <li>Phone authentication via Firebase OTP — no passwords stored</li>
+    <li>Uploaded images processed in isolated temporary storage and never persisted</li>
+  </ul>
+
+  <h2>10. Children's Data</h2>
+  <p>Anbu Health AI is not directed at children under 18. Parents/guardians may use the app to seek health information about their children. We do not knowingly collect data from minors directly.</p>
+
+  <h2>11. Medical AI Limitations (Telemedicine Practice Guidelines 2020)</h2>
+  <div class="warning">
+    <p>Anbu Health AI is an AI information tool, not a registered medical practitioner. It:</p>
+    <ul style="margin-top:6px">
+      <li>Does NOT provide medical diagnosis</li>
+      <li>Does NOT write prescriptions</li>
+      <li>Does NOT replace consultation with a Registered Medical Practitioner</li>
+      <li>Should NOT be relied upon in emergencies — Call 108</li>
+    </ul>
+  </div>
+
+  <h2>12. Changes to This Policy</h2>
+  <p>We will notify you of material changes via in-app notice. Continued use after changes constitutes acceptance.</p>
+
+  <h2>13. Contact</h2>
+  <p>Anbu Health AI | <a href="mailto:grievance@anbuhealth.ai">grievance@anbuhealth.ai</a></p>
+  <p style="margin-top:32px;font-size:12px;color:rgba(255,255,255,0.3)">
+    This privacy policy is prepared in good faith to comply with India's DPDP Act 2023,
+    IT Rules 2021, and Telemedicine Practice Guidelines 2020. It does not constitute legal advice.
+    For formal compliance verification, consult a qualified legal practitioner.
+  </p>
+
+</div>
+</body>
+</html>
