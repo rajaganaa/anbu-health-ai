@@ -82,13 +82,14 @@ const NewChatIcon = () => (
 // ── API ────────────────────────────────────────────────────────────────────────
 const API_URL = "https://anbu-health-ai.kindrock-2ca528ff.centralindia.azurecontainerapps.io";
 
-async function callAnbuAPI(message, uploadedFile, mode, phone, chatId, authToken) {
+async function callAnbuAPI(message, uploadedFile, mode, phone, chatId, authToken, chatHistory) {
   const formData = new FormData();
   formData.append("question", message);
   formData.append("mode", (uploadedFile && mode) ? mode : "general");
   if (uploadedFile) formData.append("image", uploadedFile);
   if (phone) formData.append("phone", phone);
   if (chatId) formData.append("chat_id", chatId);
+  if (chatHistory && chatHistory.length > 0) formData.append("chat_history", JSON.stringify(chatHistory));
   const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
   const response = await fetch(`${API_URL}/api/analyze`, { method: "POST", headers, body: formData });
   if (response.status === 429) {
@@ -138,21 +139,28 @@ async function apiUserHistory(phone, authToken) {
   return data.messages || [];
 }
 
-// ── Prompt counter (localStorage fallback) ─────────────────────────────────────
-const MAX_PROMPTS = 20;
+// ── Token counter (localStorage fallback) ─────────────────────────────────────
+const MAX_PROMPTS = 20; // kept for backward UI compat (used in Sidebar display)
+const MAX_TOKENS_PER_DAY = 50000;
 function getPromptData() {
   try {
     const data = JSON.parse(localStorage.getItem("anbu_prompts") || "{}");
     const today = new Date().toDateString();
-    if (data.date !== today) return { count: 0, date: today };
+    if (data.date !== today) return { count: 0, tokens: 0, date: today };
     return data;
-  } catch { return { count: 0, date: new Date().toDateString() }; }
+  } catch { return { count: 0, tokens: 0, date: new Date().toDateString() }; }
 }
 function incrementPrompt() {
   const data = getPromptData();
   const updated = { ...data, count: data.count + 1, date: new Date().toDateString() };
   try { localStorage.setItem("anbu_prompts", JSON.stringify(updated)); } catch {}
   return updated.count;
+}
+function incrementTokens(tokensUsed) {
+  const data = getPromptData();
+  const updated = { ...data, count: data.count + 1, tokens: (data.tokens || 0) + (tokensUsed || 0), date: new Date().toDateString() };
+  try { localStorage.setItem("anbu_prompts", JSON.stringify(updated)); } catch {}
+  return updated;
 }
 
 // ── 1. StructuredLabResult ────────────────────────────────────────────────────
@@ -963,10 +971,8 @@ function ComplianceDisclaimer({ text }) {
 }
 
 // ── DeleteDataModal — DPDP Act 2023 §12, Right to Erasure ─────────────────────
-// The backend's DELETE /api/data/delete requires a fresh OTP (sent via the
-// existing MSG91 /api/auth/send-otp endpoint) regardless of whether the user
-// originally signed in via Firebase Phone Auth or MSG91 — the two OTP paths
-// are independent, so this works for every logged-in user.
+// The backend's DELETE /api/data/delete requires a fresh OTP (sent via
+// Firebase Phone Auth on the frontend). All OTP flows use Firebase.
 function DeleteDataModal({ defaultPhone, onClose, onDeleted }) {
   const [phone, setPhone] = useState(defaultPhone || "");
   const [otp, setOtp] = useState("");
@@ -1077,9 +1083,46 @@ function DeleteDataModal({ defaultPhone, onClose, onDeleted }) {
   );
 }
 
+// ── BookingCard — Anbu Clinic appointment details ──────────────────────────────
+function BookingCard({ onClose }) {
+  return (
+    <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:20 }}>
+      <div style={{ background:"#0f1117",border:"1px solid rgba(16,185,129,0.3)",borderRadius:20,padding:24,width:"100%",maxWidth:360,position:"relative" }}>
+        <button onClick={onClose} style={{ position:"absolute",top:12,right:14,background:"none",border:"none",color:"rgba(255,255,255,0.4)",fontSize:20,cursor:"pointer" }}>✕</button>
+        <div style={{ textAlign:"center",marginBottom:16 }}>
+          <div style={{ fontSize:32,marginBottom:6 }}>🏥</div>
+          <h3 style={{ margin:0,fontSize:17,fontWeight:800,color:"white" }}>Anbu Clinic</h3>
+          <p style={{ margin:"4px 0 0",fontSize:12,color:"rgba(255,255,255,0.4)" }}>Pappakudi, Ariyalur District</p>
+        </div>
+        <div style={{ display:"flex",flexDirection:"column",gap:10,fontSize:13 }}>
+          <div style={{ background:"rgba(16,185,129,0.08)",borderRadius:10,padding:"10px 14px" }}>
+            <div style={{ color:"rgba(255,255,255,0.45)",fontSize:11,marginBottom:6 }}>👨‍⚕️ DOCTORS</div>
+            <div style={{ color:"rgba(255,255,255,0.85)",marginBottom:4 }}>Dr. Raghul M.D <span style={{ color:"rgba(255,255,255,0.35)",fontSize:11 }}>(Asst Professor)</span></div>
+            <div style={{ color:"rgba(255,255,255,0.85)" }}>Dr. Rajeswari M.D <span style={{ color:"rgba(255,255,255,0.35)",fontSize:11 }}>(PHC Kattumannarkoil)</span></div>
+          </div>
+          <div style={{ background:"rgba(255,255,255,0.04)",borderRadius:10,padding:"10px 14px" }}>
+            <div style={{ color:"rgba(255,255,255,0.45)",fontSize:11,marginBottom:6 }}>🕐 TIMINGS</div>
+            <div style={{ color:"rgba(255,255,255,0.75)",marginBottom:2 }}>Mon–Fri: 9–12am &amp; 5–9:30pm</div>
+            <div style={{ color:"rgba(255,255,255,0.75)" }}>Sat–Sun: 9am–1pm &amp; 5–10pm</div>
+          </div>
+          <div style={{ background:"rgba(255,255,255,0.04)",borderRadius:10,padding:"10px 14px" }}>
+            <div style={{ color:"rgba(255,255,255,0.45)",fontSize:11,marginBottom:6 }}>🔬 FACILITIES</div>
+            <div style={{ color:"rgba(255,255,255,0.75)" }}>Lab • Scan • Pharmacy</div>
+          </div>
+          <a href="tel:9176634174" style={{ display:"block",textAlign:"center",padding:"12px",borderRadius:10,background:"linear-gradient(135deg,#059669,#10b981)",color:"white",fontWeight:700,fontSize:14,textDecoration:"none" }}>
+            📞 Call to Book: 9176634174
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── PrivacyLinks — Privacy Policy / Terms / Delete My Data (sidebar footer) ───
 function PrivacyLinks({ user }) {
   const [showDelete, setShowDelete] = useState(false);
+  const [showBooking, setShowBooking] = useState(false);
+  const [showDev, setShowDev] = useState(false);
   return (
     <div style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
       <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>Legal</div>
@@ -1093,11 +1136,27 @@ function PrivacyLinks({ user }) {
           🔒 Privacy Policy (DPDP Act 2023)
         </a>
         <button
+          onClick={() => setShowBooking(true)}
+          style={{ background:"none",border:"none",padding:0,cursor:"pointer",fontSize:12,color:"rgba(16,185,129,0.7)",textAlign:"left",fontFamily:"inherit" }}
+        >
+          🏥 Book Appointment
+        </button>
+        <button
+          onClick={() => setShowDev(v => !v)}
+          style={{ background:"none",border:"none",padding:0,cursor:"pointer",fontSize:12,color:"rgba(255,255,255,0.35)",textAlign:"left",fontFamily:"inherit" }}
+        >
+          👨‍💻 Developer Contact
+        </button>
+        {showDev && (
+          <div style={{ background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"8px 10px",fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.7 }}>
+            <div>Rajaganapathy M</div>
+            <a href="mailto:rajaganaa@gmail.com" style={{ color:"rgba(99,102,241,0.8)",textDecoration:"none" }}>rajaganaa@gmail.com</a>
+            <div><a href="tel:9176631419" style={{ color:"rgba(255,255,255,0.4)",textDecoration:"none" }}>📞 9176631419</a></div>
+          </div>
+        )}
+        <button
           onClick={() => setShowDelete(true)}
-          style={{
-            background: "none", border: "none", padding: 0, cursor: "pointer",
-            fontSize: 12, color: "rgba(239,68,68,0.6)", textAlign: "left", fontFamily: "inherit",
-          }}
+          style={{ background:"none",border:"none",padding:0,cursor:"pointer",fontSize:12,color:"rgba(239,68,68,0.6)",textAlign:"left",fontFamily:"inherit" }}
         >
           🗑️ Delete My Data
         </button>
@@ -1109,6 +1168,7 @@ function PrivacyLinks({ user }) {
           onDeleted={() => setShowDelete(false)}
         />
       )}
+      {showBooking && <BookingCard onClose={() => setShowBooking(false)} />}
     </div>
   );
 }
@@ -1261,7 +1321,7 @@ function OTPModal({ onSuccess, onClose }) {
   );
 }
 
-function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCount, onClose, visible }) {
+function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, user, promptCount, onClose, visible }) {
   return (
     <>
       {visible && <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:40 }} />}
@@ -1290,10 +1350,13 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCou
         <div style={{ flex:1,overflowY:"auto",padding:"8px 8px" }}>
           <p style={{ margin:"8px 8px 6px",fontSize:10,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",letterSpacing:1 }}>Recent Chats</p>
           {chats.map(chat=>(
-            <button key={chat.id} onClick={()=>{onSelectChat(chat.id);onClose();}} style={{ width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:chat.id===activeChatId?"rgba(16,185,129,0.12)":"none",color:chat.id===activeChatId?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.5)",fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8,marginBottom:2,transition:"all 0.15s" }}>
-              <HistoryIcon />
-              <span style={{ overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{chat.title}</span>
-            </button>
+            <div key={chat.id} style={{ display:"flex",alignItems:"center",marginBottom:2 }}>
+              <button onClick={()=>{onSelectChat(chat.id);onClose();}} style={{ flex:1,padding:"8px 10px",borderRadius:8,border:"none",background:chat.id===activeChatId?"rgba(16,185,129,0.12)":"none",color:chat.id===activeChatId?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.5)",fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8,transition:"all 0.15s",minWidth:0 }}>
+                <HistoryIcon />
+                <span style={{ overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{chat.title}</span>
+              </button>
+              <button onClick={()=>{ if(window.confirm("Delete this chat?")) onDeleteChat(chat.id); }} style={{ padding:"4px 6px",borderRadius:6,border:"none",background:"none",color:"rgba(255,255,255,0.2)",fontSize:13,cursor:"pointer",flexShrink:0,transition:"color 0.15s" }} title="Delete chat">🗑</button>
+            </div>
           ))}
         </div>
         {user && (
@@ -1305,6 +1368,9 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCou
             </div>
           </div>
         )}
+        <div style={{ padding:"8px 16px",borderTop:"1px solid rgba(255,255,255,0.06)" }}>
+          <button onClick={()=>{ if(window.confirm("Clear all chats?")) onDeleteChat("all"); }} style={{ width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid rgba(239,68,68,0.2)",background:"rgba(239,68,68,0.05)",color:"rgba(239,68,68,0.6)",fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s" }}>🗑 Clear All Chats</button>
+        </div>
         <PrivacyLinks user={user} />
       </div>
     </>
@@ -1396,6 +1462,11 @@ export default function AnbuHealthAI() {
     if (promptCount >= MAX_PROMPTS) return;
 
     const msgText = text || (pendingFile ? `${pendingFile.name} analyze பண்ணு` : "");
+
+    // Booking keyword detection
+    const bookingKeywords = ["appointment", "book", "doctor", "clinic", "booking", "visit", "டாக்டர்", "அப்பாய்ண்ட்மென்ட்", "கிளினிக்"];
+    const isBookingQuery = bookingKeywords.some(k => msgText.toLowerCase().includes(k));
+
     const userMsg = { id:Date.now(),role:"user",content:msgText,file:pendingFile?.name,fileMode:pendingMode,timestamp:Date.now() };
     const fileForAPI = pendingFile;
     const modeForAPI = pendingMode;
@@ -1405,10 +1476,22 @@ export default function AnbuHealthAI() {
     addMessage(activeChatId, userMsg);
     setInputText(""); setPendingFile(null); setPendingMode(null); setIsLoading(true);
 
-    if (!phone) { const localCount = incrementPrompt(); setPromptCount(localCount); }
+    if (!phone) { const updated = incrementTokens(0); setPromptCount(updated.count); }
+
+    // Handle booking queries locally without calling the API
+    if (isBookingQuery) {
+      setIsLoading(false);
+      addMessage(activeChatId, {
+        id: Date.now()+1,
+        role: "assistant",
+        content: "🏥 **Anbu Clinic — Book an Appointment**\n\n**Doctors:**\n• Dr. Raghul M.D (Asst Professor)\n• Dr. Rajeswari M.D (PHC Kattumannarkoil)\n\n**Location:** Pappakudi, Ariyalur District\n\n**Timings:**\n• Mon–Fri: 9–12am & 5–9:30pm\n• Sat–Sun: 9am–1pm & 5–10pm\n\n**Facilities:** Lab • Scan • Pharmacy\n\n📞 **Call to book: [9176634174](tel:9176634174)**",
+        timestamp: Date.now(),
+      });
+      return;
+    }
 
     try {
-      const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId, authToken);
+      const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId, authToken, messages);
       addMessage(activeChatId, {
         id: Date.now()+1,
         role: "assistant",
@@ -1452,6 +1535,25 @@ export default function AnbuHealthAI() {
     const newId = `c${Date.now()}`;
     setChats(prev => [{ id:newId,title:"New Chat",messages:[] }, ...prev]);
     setActiveChatId(newId); setSidebarOpen(false);
+  };
+
+  const handleDeleteChat = (chatId) => {
+    if (chatId === "all") {
+      const newId = `c${Date.now()}`;
+      setChats([{ id:newId,title:"New Chat",messages:[] }]);
+      setActiveChatId(newId);
+    } else {
+      setChats(prev => {
+        const remaining = prev.filter(c => c.id !== chatId);
+        if (remaining.length === 0) {
+          const newId = `c${Date.now()}`;
+          setActiveChatId(newId);
+          return [{ id:newId,title:"New Chat",messages:[] }];
+        }
+        if (chatId === activeChatId) setActiveChatId(remaining[0].id);
+        return remaining;
+      });
+    }
   };
 
   const handleLoginSuccess = useCallback(async (u) => {
@@ -1498,11 +1600,11 @@ export default function AnbuHealthAI() {
       `}</style>
 
       {/* reCAPTCHA must live outside any backdropFilter container */}
-      <div id="recaptcha-container" style={{ position:"fixed",bottom:0,right:0,zIndex:9999 }} />
+      <div id="recaptcha-container" style={{ display:"none" }} />
       {showConsent && <ConsentModal onConsent={() => setShowConsent(false)} />}
       {showOTP && <OTPModal onSuccess={handleLoginSuccess} onClose={() => setShowOTP(false)} />}
 
-      <Sidebar visible={sidebarOpen} onClose={()=>setSidebarOpen(false)} chats={chats} activeChatId={activeChatId} onNewChat={handleNewChat} onSelectChat={setActiveChatId} user={user} promptCount={promptCount} />
+      <Sidebar visible={sidebarOpen} onClose={()=>setSidebarOpen(false)} chats={chats} activeChatId={activeChatId} onNewChat={handleNewChat} onSelectChat={setActiveChatId} onDeleteChat={handleDeleteChat} user={user} promptCount={promptCount} />
       {showUploadModal && <UploadModal mode={uploadMode} onClose={()=>setShowUploadModal(false)} onUpload={handleUpload} />}
       {showPlusMenu && <div onClick={()=>setShowPlusMenu(false)} style={{ position:"fixed",inset:0,zIndex:20 }} />}
 
