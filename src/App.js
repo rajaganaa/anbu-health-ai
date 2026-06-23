@@ -82,18 +82,13 @@ const NewChatIcon = () => (
 // ── API ────────────────────────────────────────────────────────────────────────
 const API_URL = "https://anbu-health-ai.kindrock-2ca528ff.centralindia.azurecontainerapps.io";
 
-async function callAnbuAPI(message, uploadedFile, mode, phone, chatId, authToken, chatHistory = []) {
+async function callAnbuAPI(message, uploadedFile, mode, phone, chatId, authToken) {
   const formData = new FormData();
   formData.append("question", message);
   formData.append("mode", (uploadedFile && mode) ? mode : "general");
   if (uploadedFile) formData.append("image", uploadedFile);
   if (phone) formData.append("phone", phone);
   if (chatId) formData.append("chat_id", chatId);
-  // FIX: Send last 6 messages as context so AI understands follow-up questions
-  if (chatHistory.length > 0) {
-    const recentHistory = chatHistory.slice(-6).map(m => ({ role: m.role, content: m.content?.slice(0, 400) || "" }));
-    formData.append("chat_history", JSON.stringify(recentHistory));
-  }
   const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
   const response = await fetch(`${API_URL}/api/analyze`, { method: "POST", headers, body: formData });
   if (response.status === 429) {
@@ -750,9 +745,11 @@ function MessageBubble({ msg, isLast, onFollowUp }) {
           </div>
         )}
         <div style={{ background:isUser?"linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.2))":"rgba(255,255,255,0.05)",border:isUser?"1px solid rgba(99,102,241,0.35)":"1px solid rgba(255,255,255,0.08)",borderRadius:msg.file?"0 12px 12px 12px":(isUser?"16px 4px 16px 16px":"4px 16px 16px 16px"),padding:"11px 14px" }}>
+          {!isUser && <EmergencyAlert message={msg.emergency_alert} />}
           <p style={{ margin:0,fontSize:14,lineHeight:1.65,color:"rgba(255,255,255,0.88)",whiteSpace:"pre-wrap" }}>{msg.content}</p>
           {hasLabOrScan && !hasMedicine && (isScan ? <StructuredScanResult data={msg.structured} onFollowUp={onFollowUp} /> : <StructuredLabResult data={msg.structured} onFollowUp={onFollowUp} />)}
           {hasMedicine && <StructuredMedicineResult data={msg.structured} onFollowUp={onFollowUp} />}
+          {!isUser && <ComplianceDisclaimer text={msg.compliance_disclaimer} />}
         </div>
         {!isUser && (
           <div style={{ display:"flex",gap:8,marginTop:5,paddingLeft:4 }}>
@@ -829,6 +826,293 @@ function UploadModal({ mode, onClose, onUpload }) {
   );
 }
 
+// ── ConsentModal — DPDP Act 2023 §6 consent capture ───────────────────────────
+function ConsentModal({ onConsent }) {
+  const handleAgree = async () => {
+    try { localStorage.setItem("anbu_consent_v1", "true"); } catch {}
+    try {
+      const fd = new FormData();
+      fd.append("phone", "anonymous");
+      fd.append("consent_given", "true");
+      fd.append("consent_version", "1.0");
+      await fetch(`${API_URL}/api/consent`, { method: "POST", body: fd });
+    } catch {}
+    onConsent(true);
+  };
+
+  const handleDecline = () => {
+    try { localStorage.setItem("anbu_consent_v1", "false"); } catch {}
+    onConsent(false);
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 1000,
+      background: "rgba(0,0,0,0.85)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+    }}>
+      <div style={{
+        background: "#1a1f2e", borderRadius: 16, padding: 28, maxWidth: 420, width: "100%",
+        border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 24px 48px rgba(0,0,0,0.6)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+          <span style={{ fontSize: 28 }}>🏥</span>
+          <div>
+            <div style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>Anbu Health AI</div>
+            <div style={{ color: "#6ee7b7", fontSize: 12 }}>தகவல் & ஒப்புதல் / Data & Consent</div>
+          </div>
+        </div>
+
+        <div style={{
+          background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)",
+          borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 13, color: "#a7f3d0", lineHeight: 1.6,
+        }}>
+          <strong>இந்த app பயன்படுத்த முன்:</strong><br />
+          நாங்கள் collect பண்றோம்:
+          <ul style={{ margin: "8px 0 0 0", paddingLeft: 16 }}>
+            <li>உங்கள் phone number (login-க்கு)</li>
+            <li>நீங்கள் கேட்கும் health questions</li>
+            <li>Upload பண்ணும் images (lab reports, scans, medicines)</li>
+          </ul>
+        </div>
+
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.6, marginBottom: 16 }}>
+          <strong style={{ color: "rgba(255,255,255,0.8)" }}>Data stored on:</strong> Azure Central India + Supabase (encrypted)<br />
+          <strong style={{ color: "rgba(255,255,255,0.8)" }}>Your rights (DPDP Act 2023):</strong> Access, correct, or delete your data anytime via Settings.<br />
+          <strong style={{ color: "rgba(255,255,255,0.8)" }}>Retention:</strong> Chat history kept for 90 days, then auto-deleted.<br />
+          <strong style={{ color: "rgba(255,255,255,0.8)" }}>Purpose:</strong> Health information service only — not a diagnostic or prescription service.
+        </div>
+
+        <div style={{
+          background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)",
+          borderRadius: 10, padding: 12, marginBottom: 20, fontSize: 12, color: "#fca5a5", lineHeight: 1.6,
+        }}>
+          ⚠️ <strong>Anbu Health AI health information மட்டும் தரும்.</strong><br />
+          இது medical diagnosis, prescription, அல்லது doctor advice இல்ல.<br />
+          எந்த treatment-க்கும் Registered Doctor கிட்ட போங்க.
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={handleDecline}
+            style={{
+              flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)",
+              background: "transparent", color: "rgba(255,255,255,0.5)", cursor: "pointer", fontSize: 14,
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleAgree}
+            style={{
+              flex: 2, padding: "11px 0", borderRadius: 10, border: "none",
+              background: "linear-gradient(135deg,#10b981,#059669)", color: "#fff",
+              cursor: "pointer", fontSize: 14, fontWeight: 600,
+            }}
+          >
+            ✓ புரிகிறது, தொடர்க (I Agree & Continue)
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── EmergencyAlert — Telemedicine Guidelines 2020, Clause 3.5.5 ───────────────
+function EmergencyAlert({ message }) {
+  if (!message) return null;
+  return (
+    <div style={{
+      background: "rgba(239,68,68,0.15)", border: "1.5px solid #ef4444",
+      borderRadius: 10, padding: "12px 14px", margin: "0 0 8px 0",
+      display: "flex", alignItems: "flex-start", gap: 10,
+    }}>
+      <span style={{ fontSize: 20, flexShrink: 0 }}>🚨</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ color: "#f87171", fontWeight: 700, fontSize: 13, marginBottom: 4 }}>
+          EMERGENCY / அவசரம்
+        </div>
+        <div style={{ color: "#fca5a5", fontSize: 13, lineHeight: 1.5 }}>{message}</div>
+      </div>
+      <a
+        href="tel:108"
+        style={{
+          flexShrink: 0, background: "#ef4444", color: "#fff", borderRadius: 8,
+          padding: "6px 12px", textDecoration: "none", fontWeight: 700, fontSize: 14,
+        }}
+      >
+        📞 108
+      </a>
+    </div>
+  );
+}
+
+// ── ComplianceDisclaimer — mandatory disclaimer on every AI health answer ─────
+function ComplianceDisclaimer({ text }) {
+  if (!text) return null;
+  return (
+    <div style={{
+      borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: 10, paddingTop: 8,
+      fontSize: 11, color: "rgba(255,255,255,0.3)", lineHeight: 1.5,
+      display: "flex", alignItems: "flex-start", gap: 6,
+    }}>
+      <span style={{ flexShrink: 0, fontSize: 13 }}>ℹ️</span>
+      <span>{text}</span>
+    </div>
+  );
+}
+
+// ── DeleteDataModal — DPDP Act 2023 §12, Right to Erasure ─────────────────────
+// The backend's DELETE /api/data/delete requires a fresh OTP (sent via the
+// existing MSG91 /api/auth/send-otp endpoint) regardless of whether the user
+// originally signed in via Firebase Phone Auth or MSG91 — the two OTP paths
+// are independent, so this works for every logged-in user.
+function DeleteDataModal({ defaultPhone, onClose, onDeleted }) {
+  const [phone, setPhone] = useState(defaultPhone || "");
+  const [otp, setOtp] = useState("");
+  const [step, setStep] = useState("confirm"); // confirm | otp | deleting | done
+  const [error, setError] = useState("");
+
+  const sendOtp = async () => {
+    if (phone.length !== 10) { setError("சரியான 10 எண் குறிப்பிடு"); return; }
+    setError("");
+    try {
+      const fd = new FormData();
+      fd.append("phone", phone);
+      const r = await fetch(`${API_URL}/api/auth/send-otp`, { method: "POST", body: fd });
+      if (!r.ok) { const b = await r.json().catch(()=>({})); throw new Error(b.detail || "OTP send failed"); }
+      setStep("otp");
+    } catch (e) {
+      setError(e.message || "OTP send failed. Try again.");
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (otp.length < 4) { setError("OTP குறிப்பிடு"); return; }
+    setError(""); setStep("deleting");
+    try {
+      const fd = new FormData();
+      fd.append("phone", phone);
+      fd.append("otp", otp);
+      const r = await fetch(`${API_URL}/api/data/delete`, { method: "DELETE", body: fd });
+      if (!r.ok) { const b = await r.json().catch(()=>({})); throw new Error(b.detail || "Deletion failed"); }
+      try { localStorage.clear(); } catch {}
+      setStep("done");
+      setTimeout(() => { onDeleted?.(); window.location.reload(); }, 1800);
+    } catch (e) {
+      setError(e.message || "Deletion failed. Try again.");
+      setStep("otp");
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 1100,
+      background: "rgba(0,0,0,0.85)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+    }}>
+      <div style={{
+        background: "#1a1f2e", borderRadius: 16, padding: 24, maxWidth: 380, width: "100%",
+        border: "1px solid rgba(239,68,68,0.25)", boxShadow: "0 24px 48px rgba(0,0,0,0.6)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+          <span style={{ fontSize: 22 }}>🗑️</span>
+          <div style={{ color: "#f87171", fontWeight: 700, fontSize: 15 }}>Delete My Data</div>
+        </div>
+
+        {step === "confirm" && (
+          <>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", lineHeight: 1.6, marginBottom: 14 }}>
+              இது உங்கள் chat history, usage records மற்றும் account-ஐ <strong>நிரந்தரமாக</strong> delete செய்யும்.
+              இதை மீட்க முடியாது. தொடர OTP verify பண்ணணும்.
+            </p>
+            <input
+              value={phone} onChange={e=>setPhone(e.target.value.replace(/\D/g,"").slice(0,10))}
+              placeholder="10-digit phone number"
+              style={{ width:"100%", padding:"10px 12px", borderRadius:8, border:"1px solid rgba(255,255,255,0.15)", background:"rgba(255,255,255,0.04)", color:"#fff", fontSize:14, marginBottom:10, fontFamily:"inherit" }}
+            />
+          </>
+        )}
+
+        {step === "otp" && (
+          <>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginBottom: 12 }}>
+              +91 {phone} க்கு அனுப்பிய OTP-ஐ குறிப்பிடுங்க:
+            </p>
+            <input
+              value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,6))}
+              placeholder="6-digit OTP" autoFocus
+              style={{ width:"100%", padding:"10px 12px", borderRadius:8, border:"1px solid rgba(255,255,255,0.15)", background:"rgba(255,255,255,0.04)", color:"#fff", fontSize:14, marginBottom:10, fontFamily:"inherit", letterSpacing:4, textAlign:"center" }}
+            />
+          </>
+        )}
+
+        {step === "deleting" && (
+          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginBottom: 10 }}>Deleting your data…</p>
+        )}
+
+        {step === "done" && (
+          <p style={{ fontSize: 13, color: "#6ee7b7", marginBottom: 10 }}>
+            ✓ உங்கள் எல்லா தகவல்களும் delete ஆகிவிட்டன. Reloading…
+          </p>
+        )}
+
+        {error && <p style={{ fontSize: 12, color: "#fca5a5", marginBottom: 10 }}>{error}</p>}
+
+        {step !== "done" && step !== "deleting" && (
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            <button onClick={onClose} style={{ flex:1, padding:"10px 0", borderRadius:8, border:"1px solid rgba(255,255,255,0.15)", background:"transparent", color:"rgba(255,255,255,0.5)", cursor:"pointer", fontSize:13 }}>
+              Cancel
+            </button>
+            <button
+              onClick={step === "confirm" ? sendOtp : confirmDelete}
+              style={{ flex:2, padding:"10px 0", borderRadius:8, border:"none", background:"#ef4444", color:"#fff", cursor:"pointer", fontSize:13, fontWeight:600 }}
+            >
+              {step === "confirm" ? "Send OTP" : "Confirm Delete"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── PrivacyLinks — Privacy Policy / Terms / Delete My Data (sidebar footer) ───
+function PrivacyLinks({ user }) {
+  const [showDelete, setShowDelete] = useState(false);
+  return (
+    <div style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>Legal</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <a
+          href="/privacy-policy.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", textDecoration: "none" }}
+        >
+          🔒 Privacy Policy (DPDP Act 2023)
+        </a>
+        <button
+          onClick={() => setShowDelete(true)}
+          style={{
+            background: "none", border: "none", padding: 0, cursor: "pointer",
+            fontSize: 12, color: "rgba(239,68,68,0.6)", textAlign: "left", fontFamily: "inherit",
+          }}
+        >
+          🗑️ Delete My Data
+        </button>
+      </div>
+      {showDelete && (
+        <DeleteDataModal
+          defaultPhone={user?.phone}
+          onClose={() => setShowDelete(false)}
+          onDeleted={() => setShowDelete(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── OTPModal — Firebase Phone Auth ────────────────────────────────────────────
 function OTPModal({ onSuccess, onClose }) {
   const [phone, setPhone] = useState("");
@@ -837,115 +1121,87 @@ function OTPModal({ onSuccess, onClose }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [confirmResult, setConfirmResult] = useState(null);
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const cooldownRef = useRef(null);
 
-  // FIX: Pre-initialise reCAPTCHA once on mount — not on every send click.
-  // This is the main cause of the OTP send delay.
+
+  // Cleanup on unmount
   useEffect(() => {
-    const initRecaptcha = () => {
-      try {
-        if (window.recaptchaVerifier) return; // already ready
-        window.recaptchaVerifier = new RecaptchaVerifier(
-          auth, "recaptcha-container", {
-            size: "invisible",
-            callback: () => {},
-            "expired-callback": () => {
-              // On expiry, clear and re-init silently
-              try { window.recaptchaVerifier?.clear(); } catch {}
-              window.recaptchaVerifier = null;
-              initRecaptcha();
-            }
-          }
-        );
-        // Render eagerly so it's ready when user taps send
-        window.recaptchaVerifier.render().catch(() => {});
-      } catch (e) {
-        console.warn("[reCAPTCHA] Pre-init failed, will retry on send:", e.message);
-      }
-    };
-    initRecaptcha();
     return () => {
       try { window.recaptchaVerifier?.clear(); } catch {}
       window.recaptchaVerifier = null;
-      if (cooldownRef.current) clearInterval(cooldownRef.current);
     };
   }, []);
-
-  const _getVerifier = () => {
-    if (window.recaptchaVerifier) return window.recaptchaVerifier;
-    // Fallback: create fresh if pre-init failed
-    window.recaptchaVerifier = new RecaptchaVerifier(
-      auth, "recaptcha-container", { size: "invisible", callback: () => {} }
-    );
-    return window.recaptchaVerifier;
-  };
-
-  const _startCooldown = (seconds = 30) => {
-    setResendCooldown(seconds);
-    cooldownRef.current = setInterval(() => {
-      setResendCooldown(prev => { if (prev <= 1) { clearInterval(cooldownRef.current); return 0; } return prev - 1; });
-    }, 1000);
-  };
 
   const sendOTP = async () => {
     if (phone.length !== 10) { setError("சரியான 10 எண் குறிப்பிடு"); return; }
     setLoading(true); setError("");
+    // Always create fresh verifier — reusing causes auth/invalid-app-credential
+    try { window.recaptchaVerifier?.clear(); } catch {}
+    window.recaptchaVerifier = null;
     try {
-      const result = await signInWithPhoneNumber(auth, `+91${phone}`, _getVerifier());
+      window.recaptchaVerifier = new RecaptchaVerifier(
+        auth, "recaptcha-container", {
+          size: "invisible",
+          callback: () => {},
+          "expired-callback": () => { window.recaptchaVerifier = null; }
+        }
+      );
+      const result = await signInWithPhoneNumber(auth, `+91${phone}`, window.recaptchaVerifier);
       setConfirmResult(result);
       setStep("otp");
-      _startCooldown(30);
     } catch (e) {
-      // If verifier is stale, clear and tell user to retry once
-      if (e.code === "auth/invalid-app-credential" || e.code === "auth/argument-error") {
-        try { window.recaptchaVerifier?.clear(); } catch {}
-        window.recaptchaVerifier = null;
-        setError("reCAPTCHA reset ஆச்சு — மீண்டும் try பண்ணு");
-      } else {
-        setError(e.code === "auth/too-many-requests"
-          ? "Too many attempts. சில நிமிடம் wait பண்ணு."
-          : (e.message || "OTP send failed. Try again."));
-      }
+      const msg = e.code === "auth/too-many-requests"
+        ? "Too many attempts. Wait a few minutes and try again."
+        : (e.message || "OTP send failed. Try again.");
+      setError(msg);
+      try { window.recaptchaVerifier?.clear(); } catch {}
+      window.recaptchaVerifier = null;
     } finally { setLoading(false); }
   };
 
   const verifyOTP = async () => {
     if (otp.length !== 6) { setError("தவறான OTP"); return; }
     setLoading(true); setError("");
+    // Step 1: Verify OTP with Firebase only
     let firebaseResult;
     try {
       firebaseResult = await confirmResult.confirm(otp);
     } catch (e) {
-      setError(e.code === "auth/invalid-verification-code"
-        ? "தவறான OTP — மீண்டும் முயற்சி செய்"
-        : (e.message || "OTP verification failed."));
+      const msg = e.code === "auth/invalid-verification-code"
+        ? "தவறான OTP. மீண்டும் முயற்சி செய.⊥"
+        : (e.message || "OTP verification failed.");
+      setError(msg);
       setLoading(false);
       return;
     }
-    // Go to chat IMMEDIATELY, sync backend in background
+    // Step 2: Go to chat IMMEDIATELY, sync backend in background
     const idToken = await firebaseResult.user.getIdToken();
     setStep("success");
     setLoading(false);
+    // Open chat right away — dont wait for backend
     onSuccess({ phone, authToken: idToken, prompts: null });
+    // Background sync
     apiFirebaseSession(idToken).catch(e => console.warn("Backend sync:", e));
   };
 
   const resendOTP = async () => {
-    if (resendCooldown > 0) return;
     setLoading(true); setError("");
-    // Clear stale verifier before resend
     try { window.recaptchaVerifier?.clear(); } catch {}
     window.recaptchaVerifier = null;
     try {
-      const verifier = new RecaptchaVerifier(auth, "recaptcha-container", { size: "invisible", callback: () => {} });
-      window.recaptchaVerifier = verifier;
-      const result = await signInWithPhoneNumber(auth, `+91${phone}`, verifier);
+      window.recaptchaVerifier = new RecaptchaVerifier(
+        auth, "recaptcha-container", {
+          size: "invisible",
+          callback: () => {},
+          "expired-callback": () => { window.recaptchaVerifier = null; }
+        }
+      );
+      const result = await signInWithPhoneNumber(auth, `+91${phone}`, window.recaptchaVerifier);
       setConfirmResult(result);
       setError("OTP resent ✓");
-      _startCooldown(30);
     } catch (e) {
       setError("Resend failed. Try again.");
+      try { window.recaptchaVerifier?.clear(); } catch {}
+      window.recaptchaVerifier = null;
     } finally { setLoading(false); }
   };
 
@@ -957,7 +1213,7 @@ function OTPModal({ onSuccess, onClose }) {
             <HeartIcon />
           </div>
           <h2 style={{ margin:0,fontSize:22,fontWeight:800,color:"white" }}>Anbu Health AI</h2>
-          <p style={{ margin:"6px 0 0",fontSize:13,color:"rgba(255,255,255,0.4)" }}>Tamil Nadu Village Healthcare</p>
+          <p style={{ margin:"6px 0 0",fontSize:13,color:"rgba(255,255,255,0.4)" }}>Anbu clinic Rural Healthcare</p>
         </div>
 
         {step === "success" ? (
@@ -996,7 +1252,7 @@ function OTPModal({ onSuccess, onClose }) {
             </button>
             <div style={{ display:"flex",justifyContent:"space-between",marginTop:8 }}>
               <button onClick={()=>setStep("phone")} style={{ flex:1,padding:"10px",borderRadius:10,border:"none",background:"none",color:"rgba(255,255,255,0.35)",fontSize:13,cursor:"pointer" }}>← Change number</button>
-              <button onClick={resendOTP} disabled={loading || resendCooldown > 0} style={{ flex:1,padding:"10px",borderRadius:10,border:"none",background:"none",color:resendCooldown>0?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.35)",fontSize:13,cursor:resendCooldown>0?"default":"pointer" }}>{resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend OTP"}</button>
+              <button onClick={resendOTP} disabled={loading} style={{ flex:1,padding:"10px",borderRadius:10,border:"none",background:"none",color:"rgba(255,255,255,0.35)",fontSize:13,cursor:"pointer" }}>Resend OTP</button>
             </div>
           </>
         )}
@@ -1005,24 +1261,7 @@ function OTPModal({ onSuccess, onClose }) {
   );
 }
 
-function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, onDeleteAccount, onLogout, user, promptCount, onClose, visible }) {
-  const [showAccountMenu, setShowAccountMenu] = useState(false);
-  const [deletingAccount, setDeletingAccount] = useState(false);
-  const [deleteOtpStep, setDeleteOtpStep] = useState(false); // "confirm" phase
-  const [deleteOtp, setDeleteOtp] = useState("");
-  const [deleteError, setDeleteError] = useState("");
-
-  const handleDeleteAccount = async () => {
-    if (!deleteOtpStep) { setDeleteOtpStep(true); setDeleteError(""); return; }
-    if (deleteOtp.length !== 6) { setDeleteError("6-digit OTP enter பண்ணு"); return; }
-    setDeletingAccount(true);
-    try {
-      await onDeleteAccount(deleteOtp);
-    } catch (e) {
-      setDeleteError(e.message || "Delete failed. Try again.");
-    } finally { setDeletingAccount(false); }
-  };
-
+function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, user, promptCount, onClose, visible }) {
   return (
     <>
       {visible && <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:40 }} />}
@@ -1039,7 +1278,6 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, o
             <NewChatIcon /> New Chat
           </button>
         </div>
-
         <div style={{ padding:"10px 16px",borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5 }}>
             <span style={{ fontSize:11,color:"rgba(255,255,255,0.4)" }}>Today's prompts</span>
@@ -1049,81 +1287,25 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, o
             <div style={{ height:"100%",width:`${Math.min((promptCount/MAX_PROMPTS)*100,100)}%`,background:promptCount>=MAX_PROMPTS?"#ef4444":"linear-gradient(90deg, #059669, #10b981)",borderRadius:2,transition:"width 0.3s" }} />
           </div>
         </div>
-
-        {/* FIX 3: Chat list with individual delete buttons */}
         <div style={{ flex:1,overflowY:"auto",padding:"8px 8px" }}>
           <p style={{ margin:"8px 8px 6px",fontSize:10,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",letterSpacing:1 }}>Recent Chats</p>
           {chats.map(chat=>(
-            <div key={chat.id} style={{ display:"flex",alignItems:"center",gap:4,marginBottom:2 }}>
-              <button onClick={()=>{onSelectChat(chat.id);onClose();}}
-                style={{ flex:1,padding:"8px 10px",borderRadius:8,border:"none",background:chat.id===activeChatId?"rgba(16,185,129,0.12)":"none",color:chat.id===activeChatId?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.5)",fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8,transition:"all 0.15s",minWidth:0 }}>
-                <HistoryIcon />
-                <span style={{ overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{chat.title}</span>
-              </button>
-              {/* Delete this chat */}
-              <button
-                onClick={(e)=>{ e.stopPropagation(); if(window.confirm(`"${chat.title}" delete பண்ணணுமா?`)) onDeleteChat(chat.id); }}
-                title="Delete chat"
-                style={{ flexShrink:0,width:26,height:26,borderRadius:6,border:"none",background:"none",color:"rgba(255,255,255,0.2)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s" }}
-                onMouseEnter={e=>{ e.currentTarget.style.color="#ef4444"; e.currentTarget.style.background="rgba(239,68,68,0.1)"; }}
-                onMouseLeave={e=>{ e.currentTarget.style.color="rgba(255,255,255,0.2)"; e.currentTarget.style.background="none"; }}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-              </button>
-            </div>
+            <button key={chat.id} onClick={()=>{onSelectChat(chat.id);onClose();}} style={{ width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:chat.id===activeChatId?"rgba(16,185,129,0.12)":"none",color:chat.id===activeChatId?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.5)",fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8,marginBottom:2,transition:"all 0.15s" }}>
+              <HistoryIcon />
+              <span style={{ overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{chat.title}</span>
+            </button>
           ))}
         </div>
-
-        {/* FIX 4: Account section with logout + delete account */}
         {user && (
-          <div style={{ padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-            <button onClick={()=>setShowAccountMenu(p=>!p)}
-              style={{ width:"100%",display:"flex",alignItems:"center",gap:10,background:"none",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"left" }}>
-              <div style={{ width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg, #6366f1, #8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><UserIcon /></div>
-              <div style={{ flex:1,minWidth:0 }}>
-                <div style={{ fontSize:13,color:"rgba(255,255,255,0.8)",fontWeight:600 }}>+91 {user.phone}</div>
-                <div style={{ fontSize:11,color:"rgba(255,255,255,0.35)" }}>Verified ✓</div>
-              </div>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round" style={{ transform:showAccountMenu?"rotate(180deg)":"none",transition:"transform 0.2s",flexShrink:0 }}><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-
-            {showAccountMenu && (
-              <div style={{ marginTop:8,borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)" }}>
-                {/* Logout */}
-                <button onClick={onLogout}
-                  style={{ width:"100%",padding:"10px 12px",background:"none",border:"none",borderBottom:"1px solid rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.55)",fontSize:13,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:8,fontFamily:"inherit" }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                  Logout
-                </button>
-
-                {/* Delete account */}
-                {!deleteOtpStep ? (
-                  <button onClick={handleDeleteAccount}
-                    style={{ width:"100%",padding:"10px 12px",background:"none",border:"none",color:"#f87171",fontSize:13,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:8,fontFamily:"inherit" }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                    Delete My Data (DPDP Act)
-                  </button>
-                ) : (
-                  <div style={{ padding:"10px 12px" }}>
-                    <p style={{ fontSize:12,color:"#fca5a5",margin:"0 0 6px" }}>OTP confirm பண்ணு — இது permanent delete</p>
-                    <input type="tel" maxLength={6} value={deleteOtp} onChange={e=>setDeleteOtp(e.target.value.replace(/\D/g,""))}
-                      placeholder="• • • • • •"
-                      style={{ width:"100%",padding:"8px 10px",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(239,68,68,0.3)",borderRadius:8,fontSize:16,color:"white",outline:"none",textAlign:"center",letterSpacing:8,boxSizing:"border-box",marginBottom:6 }} />
-                    {deleteError && <p style={{ fontSize:11,color:"#ef4444",margin:"0 0 6px" }}>{deleteError}</p>}
-                    <div style={{ display:"flex",gap:6 }}>
-                      <button onClick={()=>{ setDeleteOtpStep(false); setDeleteOtp(""); setDeleteError(""); }}
-                        style={{ flex:1,padding:"7px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",background:"none",color:"rgba(255,255,255,0.4)",fontSize:12,cursor:"pointer",fontFamily:"inherit" }}>Cancel</button>
-                      <button onClick={handleDeleteAccount} disabled={deletingAccount}
-                        style={{ flex:1,padding:"7px",borderRadius:7,border:"none",background:"#ef4444",color:"white",fontSize:12,cursor:"pointer",fontWeight:600,fontFamily:"inherit" }}>
-                        {deletingAccount ? "..." : "Delete"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+          <div style={{ padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",alignItems:"center",gap:10 }}>
+            <div style={{ width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg, #6366f1, #8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center" }}><UserIcon /></div>
+            <div>
+              <div style={{ fontSize:13,color:"rgba(255,255,255,0.8)",fontWeight:600 }}>+91 {user.phone}</div>
+              <div style={{ fontSize:11,color:"rgba(255,255,255,0.35)" }}>Verified ✓</div>
+            </div>
           </div>
         )}
+        <PrivacyLinks user={user} />
       </div>
     </>
   );
@@ -1142,7 +1324,7 @@ function WelcomeScreen({ onQuickPrompt }) {
         <span style={{ fontSize:32 }}>🏥</span>
       </div>
       <h1 style={{ margin:"0 0 8px",fontSize:22,fontWeight:800,color:"white" }}>Anbu Health AI</h1>
-      <p style={{ margin:"0 0 6px",fontSize:14,color:"rgba(255,255,255,0.5)",maxWidth:300,lineHeight:1.6 }}>Tamil Nadu village patients-க்கான AI medical assistant</p>
+      <p style={{ margin:"0 0 6px",fontSize:14,color:"rgba(255,255,255,0.5)",maxWidth:300,lineHeight:1.6 }}>Anbu Clinic Rural patients-க்கான AI medical assistant</p>
       <p style={{ margin:"0 0 28px",fontSize:12,color:"rgba(255,255,255,0.25)" }}>Lab reports • X-Rays • Medicine info • Health questions</p>
       <div style={{ width:"100%",maxWidth:500 }}>
         <p style={{ margin:"0 0 10px",fontSize:11,color:"rgba(255,255,255,0.3)",textTransform:"uppercase",letterSpacing:1 }}>இதை கேளுங்க</p>
@@ -1161,6 +1343,9 @@ function WelcomeScreen({ onQuickPrompt }) {
 // ── Main App ───────────────────────────────────────────────────────────────────
 export default function AnbuHealthAI() {
   const [user, setUser] = useState(null);
+  const [showConsent, setShowConsent] = useState(() => {
+    try { return !localStorage.getItem("anbu_consent_v1"); } catch { return true; }
+  });
   const [showOTP, setShowOTP] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -1223,10 +1408,17 @@ export default function AnbuHealthAI() {
     if (!phone) { const localCount = incrementPrompt(); setPromptCount(localCount); }
 
     try {
-      // FIX: pass recent messages so AI has context for follow-up questions
-      const currentMessages = chats.find(c => c.id === activeChatId)?.messages || [];
-      const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId, authToken, currentMessages);
-      addMessage(activeChatId, { id:Date.now()+1,role:"assistant",content:result.answer,structured:result.structured,fileMode:modeForAPI,timestamp:Date.now() });
+      const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId, authToken);
+      addMessage(activeChatId, {
+        id: Date.now()+1,
+        role: "assistant",
+        content: result.answer,
+        structured: result.structured,
+        fileMode: modeForAPI,
+        timestamp: Date.now(),
+        compliance_disclaimer: result.compliance_disclaimer,
+        emergency_alert: result.emergency_alert,
+      });
       if (result.prompts && typeof result.prompts.count === "number") setPromptCount(result.prompts.count);
     } catch (e) {
       if (e.message === "DAILY_LIMIT") {
@@ -1261,56 +1453,6 @@ export default function AnbuHealthAI() {
     setChats(prev => [{ id:newId,title:"New Chat",messages:[] }, ...prev]);
     setActiveChatId(newId); setSidebarOpen(false);
   };
-
-  // FIX 3: Delete a single chat
-  const handleDeleteChat = useCallback((chatId) => {
-    setChats(prev => {
-      const remaining = prev.filter(c => c.id !== chatId);
-      if (remaining.length === 0) {
-        // Always keep at least one chat
-        return [{ id:`c${Date.now()}`,title:"New Chat",messages:[] }];
-      }
-      return remaining;
-    });
-    setActiveChatId(prev => {
-      if (prev === chatId) {
-        const remaining = chats.filter(c => c.id !== chatId);
-        return remaining.length > 0 ? remaining[0].id : `c${Date.now()}`;
-      }
-      return prev;
-    });
-  }, [chats]);
-
-  // FIX 4a: Logout
-  const handleLogout = useCallback(() => {
-    if (!window.confirm("Logout பண்ணணுமா?")) return;
-    setUser(null);
-    setChats([{ id:"c1",title:"New Chat",messages:[] }]);
-    setActiveChatId("c1");
-    setPromptCount(0);
-    setShowOTP(true);
-    try { auth.signOut(); } catch {}
-  }, []);
-
-  // FIX 4b: Delete account (DPDP Act right to erasure)
-  const handleDeleteAccount = useCallback(async (otp) => {
-    const phone = user?.phone;
-    if (!phone) throw new Error("Not logged in");
-    const fd = new FormData();
-    fd.append("phone", phone);
-    fd.append("otp", otp);
-    const r = await fetch(`${API_URL}/api/data/delete`, { method: "DELETE", body: fd });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.detail || "Delete failed");
-    // Success — log out
-    alert("உங்கள் எல்லா தகவல்களும் delete ஆகிவிட்டன. / All your data has been deleted.");
-    setUser(null);
-    setChats([{ id:"c1",title:"New Chat",messages:[] }]);
-    setActiveChatId("c1");
-    setPromptCount(0);
-    setShowOTP(true);
-    try { auth.signOut(); } catch {}
-  }, [user]);
 
   const handleLoginSuccess = useCallback(async (u) => {
     setUser(u); setShowOTP(false);
@@ -1357,9 +1499,10 @@ export default function AnbuHealthAI() {
 
       {/* reCAPTCHA must live outside any backdropFilter container */}
       <div id="recaptcha-container" style={{ position:"fixed",bottom:0,right:0,zIndex:9999 }} />
+      {showConsent && <ConsentModal onConsent={() => setShowConsent(false)} />}
       {showOTP && <OTPModal onSuccess={handleLoginSuccess} onClose={() => setShowOTP(false)} />}
 
-      <Sidebar visible={sidebarOpen} onClose={()=>setSidebarOpen(false)} chats={chats} activeChatId={activeChatId} onNewChat={handleNewChat} onSelectChat={setActiveChatId} onDeleteChat={handleDeleteChat} onDeleteAccount={handleDeleteAccount} onLogout={handleLogout} user={user} promptCount={promptCount} />
+      <Sidebar visible={sidebarOpen} onClose={()=>setSidebarOpen(false)} chats={chats} activeChatId={activeChatId} onNewChat={handleNewChat} onSelectChat={setActiveChatId} user={user} promptCount={promptCount} />
       {showUploadModal && <UploadModal mode={uploadMode} onClose={()=>setShowUploadModal(false)} onUpload={handleUpload} />}
       {showPlusMenu && <div onClick={()=>setShowPlusMenu(false)} style={{ position:"fixed",inset:0,zIndex:20 }} />}
 
