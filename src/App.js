@@ -82,11 +82,12 @@ const NewChatIcon = () => (
 // ── API ────────────────────────────────────────────────────────────────────────
 const API_URL = "https://anbu-health-ai.kindrock-2ca528ff.centralindia.azurecontainerapps.io";
 
-async function callAnbuAPI(message, uploadedFile, mode, phone, chatId, authToken, chatHistory) {
+async function callAnbuAPI(message, uploadedFile, mode, phone, chatId, authToken, chatHistory, fileContext) {
   const formData = new FormData();
   formData.append("question", message);
   formData.append("mode", (uploadedFile && mode) ? mode : "general");
   if (uploadedFile) formData.append("image", uploadedFile);
+  if (fileContext) formData.append("file_context", fileContext);
   if (phone) formData.append("phone", phone);
   if (chatId) formData.append("chat_id", chatId);
   if (chatHistory && chatHistory.length > 0) formData.append("chat_history", JSON.stringify(chatHistory));
@@ -1518,13 +1519,20 @@ export default function AnbuHealthAI() {
     }
 
     try {
-      const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId, authToken, messages);
+      // Find the most recent fileContext from chat messages for follow-up accuracy
+      const activeFileContext = (() => {
+        if (fileForAPI) return null; // new file upload — no previous context needed
+        const recentFile = [...messages].reverse().find(m => m.role === "assistant" && m.fileContext);
+        return recentFile ? recentFile.fileContext : null;
+      })();
+      const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId, authToken, messages, activeFileContext);
       addMessage(activeChatId, {
         id: Date.now()+1,
         role: "assistant",
         content: result.answer,
         structured: result.structured,
         fileMode: modeForAPI,
+        fileContext: result.file_context || null,  // store raw extracted file data
         timestamp: Date.now(),
         compliance_disclaimer: result.compliance_disclaimer,
         emergency_alert: result.emergency_alert,
@@ -1603,18 +1611,19 @@ export default function AnbuHealthAI() {
 
   const handleLoginSuccess = useCallback(async (u) => {
     setUser(u); setShowOTP(false);
-    // Load token data from local storage on login (server counts are separate)
+
+    // Always start with a fresh new chat on login
+    const freshId = `c${Date.now()}`;
+    setChats([{ id: freshId, title: "New Chat", messages: [] }]);
+    setActiveChatId(freshId);
+    setSidebarOpen(false);
+
+    // Load token data from local storage
     const tokenData = getTokenData();
     setPromptCount(tokenData.tokens);
     setTokenResetAt(tokenData.resetAt);
-    if (u?.prompts && typeof u.prompts.count === "number") {
-      // optionally sync server count into token data
-    } else {
-      try {
-        const status = await apiUserStatus(u.phone, u.authToken || null);
-        if (status) { /* server status available */ }
-      } catch {}
-    }
+
+    // Load previous chat history from server in background
     try {
       const history = await apiUserHistory(u.phone, u.authToken || null);
       if (history.length > 0) {
@@ -1622,11 +1631,23 @@ export default function AnbuHealthAI() {
         history.forEach((m, i) => {
           const cid = m.chat_id || "history";
           if (!grouped[cid]) grouped[cid] = [];
-          grouped[cid].push({ id:m.id||`${cid}_${i}`,role:m.role,content:m.content,structured:m.structured||null,fileMode:m.mode,timestamp:m.created_at?new Date(m.created_at).getTime():Date.now() });
+          grouped[cid].push({
+            id: m.id || `${cid}_${i}`,
+            role: m.role,
+            content: m.content,
+            structured: m.structured || null,
+            fileMode: m.mode,
+            fileContext: m.file_context || null,
+            timestamp: m.created_at ? new Date(m.created_at).getTime() : Date.now()
+          });
         });
-        const restoredChats = Object.entries(grouped).map(([cid,msgs])=>({ id:cid,title:(msgs[0]?.content||"Chat").slice(0,30)+"...",messages:msgs }));
-        setChats(prev => [...restoredChats, ...prev]);
-        setActiveChatId(restoredChats[0].id);
+        const restoredChats = Object.entries(grouped).map(([cid, msgs]) => ({
+          id: cid,
+          title: (msgs[0]?.content || "Chat").slice(0, 30) + "...",
+          messages: msgs
+        }));
+        // Prepend restored chats but keep the fresh new chat active
+        setChats(prev => [prev[0], ...restoredChats]);
       }
     } catch {}
   }, []);
