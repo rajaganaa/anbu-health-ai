@@ -1314,7 +1314,7 @@ function OTPModal({ onSuccess, onClose }) {
   );
 }
 
-function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, user, promptCount, onClose, visible }) {
+function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, onLogout, user, promptCount, onClose, visible }) {
   return (
     <>
       {visible && <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:40 }} />}
@@ -1348,16 +1348,22 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, u
                 <HistoryIcon />
                 <span style={{ overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{chat.title}</span>
               </button>
-              <button onClick={()=>{ if(window.confirm("Delete this chat?")) onDeleteChat(chat.id); }} style={{ padding:"4px 6px",borderRadius:6,border:"none",background:"none",color:"rgba(255,255,255,0.2)",fontSize:13,cursor:"pointer",flexShrink:0,transition:"color 0.15s" }} title="Delete chat">🗑</button>
+              <button onClick={()=>{ if(window.confirm("Delete this chat?")) onDeleteChat(chat.id); }} style={{ padding:"6px 8px",borderRadius:6,border:"1px solid rgba(239,68,68,0.25)",background:"rgba(239,68,68,0.08)",color:"rgba(239,68,68,0.7)",fontSize:13,cursor:"pointer",flexShrink:0,transition:"all 0.15s",marginRight:4 }} title="Delete chat">🗑</button>
             </div>
           ))}
         </div>
         {user && (
-          <div style={{ padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",alignItems:"center",gap:10 }}>
-            <div style={{ width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg, #6366f1, #8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center" }}><UserIcon /></div>
-            <div>
-              <div style={{ fontSize:13,color:"rgba(255,255,255,0.8)",fontWeight:600 }}>+91 {user.phone}</div>
-              <div style={{ fontSize:11,color:"rgba(255,255,255,0.35)" }}>Verified ✓</div>
+          <div style={{ padding:"10px 16px",borderTop:"1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+              <div style={{ width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg, #6366f1, #8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><UserIcon /></div>
+              <div style={{ flex:1,minWidth:0 }}>
+                <div style={{ fontSize:13,color:"rgba(255,255,255,0.8)",fontWeight:600 }}>+91 {user.phone}</div>
+                <div style={{ fontSize:11,color:"rgba(255,255,255,0.35)" }}>Verified ✓</div>
+              </div>
+              <button
+                onClick={()=>{ if(window.confirm("Logout ஆகணுமா?")) onLogout(); }}
+                style={{ padding:"5px 9px",borderRadius:8,border:"1px solid rgba(239,68,68,0.3)",background:"rgba(239,68,68,0.08)",color:"rgba(239,120,120,0.9)",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:600,flexShrink:0,whiteSpace:"nowrap" }}
+              >🚪 Logout</button>
             </div>
           </div>
         )}
@@ -1456,9 +1462,9 @@ export default function AnbuHealthAI() {
 
     const msgText = text || (pendingFile ? `${pendingFile.name} analyze பண்ணு` : "");
 
-    // Booking keyword detection
-    const bookingKeywords = ["appointment", "book", "doctor", "clinic", "booking", "visit", "டாக்டர்", "அப்பாய்ண்ட்மென்ட்", "கிளினிக்"];
-    const isBookingQuery = bookingKeywords.some(k => msgText.toLowerCase().includes(k));
+    // Booking keyword detection — must be SPECIFIC booking intent, not general doctor questions
+    const bookingKeywords = ["book appointment", "booking appointment", "appointment book", "fix appointment", "அப்பாய்ண்ட்மென்ட்", "anbu clinic", "pappakudi clinic", "visit clinic", "clinic visit", "clinic appointment"];
+    const isBookingQuery = bookingKeywords.some(k => msgText.toLowerCase().includes(k.toLowerCase()));
 
     const userMsg = { id:Date.now(),role:"user",content:msgText,file:pendingFile?.name,fileMode:pendingMode,timestamp:Date.now() };
     const fileForAPI = pendingFile;
@@ -1530,6 +1536,17 @@ export default function AnbuHealthAI() {
     setActiveChatId(newId); setSidebarOpen(false);
   };
 
+  const handleLogout = async () => {
+    try { await auth.signOut(); } catch(e) {}
+    setUser(null);
+    setShowOTP(true);
+    const newId = `c${Date.now()}`;
+    setChats([{ id:newId,title:"New Chat",messages:[] }]);
+    setActiveChatId(newId);
+    setPromptCount(0);
+    setSidebarOpen(false);
+  };
+
   const handleDeleteChat = (chatId) => {
     if (chatId === "all") {
       const newId = `c${Date.now()}`;
@@ -1597,7 +1614,7 @@ export default function AnbuHealthAI() {
       {showConsent && <ConsentModal onConsent={() => setShowConsent(false)} />}
       {showOTP && <OTPModal onSuccess={handleLoginSuccess} onClose={() => setShowOTP(false)} />}
 
-      <Sidebar visible={sidebarOpen} onClose={()=>setSidebarOpen(false)} chats={chats} activeChatId={activeChatId} onNewChat={handleNewChat} onSelectChat={setActiveChatId} onDeleteChat={handleDeleteChat} user={user} promptCount={promptCount} />
+      <Sidebar visible={sidebarOpen} onClose={()=>setSidebarOpen(false)} chats={chats} activeChatId={activeChatId} onNewChat={handleNewChat} onSelectChat={setActiveChatId} onDeleteChat={handleDeleteChat} onLogout={handleLogout} user={user} promptCount={promptCount} />
       {showUploadModal && <UploadModal mode={uploadMode} onClose={()=>setShowUploadModal(false)} onUpload={handleUpload} />}
       {showPlusMenu && <div onClick={()=>setShowPlusMenu(false)} style={{ position:"fixed",inset:0,zIndex:20 }} />}
 
