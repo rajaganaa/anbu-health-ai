@@ -139,22 +139,43 @@ async function apiUserHistory(phone, authToken) {
   return data.messages || [];
 }
 
-// ── Token counter (localStorage fallback) ─────────────────────────────────────
-const MAX_PROMPTS = 20; // kept for backward UI compat (used in Sidebar display)
-function getPromptData() {
+// ── Token quota (5000 tokens/day, resets every 12 hours) ──────────────────────
+const MAX_TOKENS_PER_DAY = 5000;
+const RESET_HOURS = 12; // hours between resets
+
+function getTokenData() {
   try {
-    const data = JSON.parse(localStorage.getItem("anbu_prompts") || "{}");
-    const today = new Date().toDateString();
-    if (data.date !== today) return { count: 0, tokens: 0, date: today };
+    const data = JSON.parse(localStorage.getItem("anbu_tokens_v2") || "{}");
+    const now = Date.now();
+    const resetMs = RESET_HOURS * 60 * 60 * 1000;
+    if (!data.resetAt || now >= data.resetAt) {
+      const nextReset = now + resetMs;
+      return { tokens: 0, resetAt: nextReset };
+    }
     return data;
-  } catch { return { count: 0, tokens: 0, date: new Date().toDateString() }; }
+  } catch { return { tokens: 0, resetAt: Date.now() + RESET_HOURS * 3600000 }; }
 }
+
+function saveTokenData(data) {
+  try { localStorage.setItem("anbu_tokens_v2", JSON.stringify(data)); } catch {}
+}
+
 function incrementTokens(tokensUsed) {
-  const data = getPromptData();
-  const updated = { ...data, count: data.count + 1, tokens: (data.tokens || 0) + (tokensUsed || 0), date: new Date().toDateString() };
-  try { localStorage.setItem("anbu_prompts", JSON.stringify(updated)); } catch {}
+  const data = getTokenData();
+  const updated = { ...data, tokens: (data.tokens || 0) + Math.max(tokensUsed || 1, 1) };
+  saveTokenData(updated);
   return updated;
 }
+
+function getTimeUntilReset(resetAt) {
+  const diff = Math.max(0, resetAt - Date.now());
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  return `${h}h ${m}m`;
+}
+
+// Keep MAX_PROMPTS as alias so sidebar progress bar still works
+const MAX_PROMPTS = MAX_TOKENS_PER_DAY;
 
 // ── 1. StructuredLabResult ────────────────────────────────────────────────────
 function StructuredLabResult({ data, onFollowUp }) {
@@ -1314,7 +1335,10 @@ function OTPModal({ onSuccess, onClose }) {
   );
 }
 
-function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, onLogout, user, promptCount, onClose, visible }) {
+function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, onLogout, user, promptCount, tokenResetAt, onClose, visible }) {
+  const tokenPct = Math.min((promptCount / MAX_TOKENS_PER_DAY) * 100, 100);
+  const exceeded = promptCount >= MAX_TOKENS_PER_DAY;
+  const resetLabel = tokenResetAt ? getTimeUntilReset(tokenResetAt) : "";
   return (
     <>
       {visible && <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:40 }} />}
@@ -1333,12 +1357,15 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, o
         </div>
         <div style={{ padding:"10px 16px",borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5 }}>
-            <span style={{ fontSize:11,color:"rgba(255,255,255,0.4)" }}>Today's prompts</span>
-            <span style={{ fontSize:11,color:promptCount>=MAX_PROMPTS?"#ef4444":"#10b981",fontWeight:600 }}>{promptCount}/{MAX_PROMPTS}</span>
+            <span style={{ fontSize:11,color:"rgba(255,255,255,0.4)" }}>Tokens today</span>
+            <span style={{ fontSize:11,color:exceeded?"#ef4444":"#10b981",fontWeight:600 }}>{promptCount}/{MAX_TOKENS_PER_DAY}</span>
           </div>
-          <div style={{ height:4,background:"rgba(255,255,255,0.08)",borderRadius:2,overflow:"hidden" }}>
-            <div style={{ height:"100%",width:`${Math.min((promptCount/MAX_PROMPTS)*100,100)}%`,background:promptCount>=MAX_PROMPTS?"#ef4444":"linear-gradient(90deg, #059669, #10b981)",borderRadius:2,transition:"width 0.3s" }} />
+          <div style={{ height:4,background:"rgba(255,255,255,0.08)",borderRadius:2,overflow:"hidden",marginBottom:4 }}>
+            <div style={{ height:"100%",width:`${tokenPct}%`,background:exceeded?"#ef4444":"linear-gradient(90deg, #059669, #10b981)",borderRadius:2,transition:"width 0.3s" }} />
           </div>
+          {exceeded && resetLabel && (
+            <div style={{ fontSize:10,color:"#ef4444",textAlign:"center" }}>🕐 Resets in {resetLabel}</div>
+          )}
         </div>
         <div style={{ flex:1,overflowY:"auto",padding:"8px 8px" }}>
           <p style={{ margin:"8px 8px 6px",fontSize:10,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",letterSpacing:1 }}>Recent Chats</p>
@@ -1419,7 +1446,8 @@ export default function AnbuHealthAI() {
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [promptCount, setPromptCount] = useState(() => getPromptData().count);
+  const [promptCount, setPromptCount] = useState(() => getTokenData().tokens);
+  const [tokenResetAt, setTokenResetAt] = useState(() => getTokenData().resetAt);
   const [pendingFile, setPendingFile] = useState(null);
   const [pendingMode, setPendingMode] = useState(null);
   const [chats, setChats] = useState([{ id:"c1",title:"New Chat",messages:[] }]);
@@ -1458,7 +1486,7 @@ export default function AnbuHealthAI() {
   const handleSend = useCallback(async (textOverride) => {
     const text = (typeof textOverride === "string" ? textOverride : inputText).trim();
     if (!text && !pendingFile) return;
-    if (promptCount >= MAX_PROMPTS) return;
+    if (promptCount >= MAX_TOKENS_PER_DAY) return;
 
     const msgText = text || (pendingFile ? `${pendingFile.name} analyze பண்ணு` : "");
 
@@ -1475,7 +1503,7 @@ export default function AnbuHealthAI() {
     addMessage(activeChatId, userMsg);
     setInputText(""); setPendingFile(null); setPendingMode(null); setIsLoading(true);
 
-    if (!phone) { const updated = incrementTokens(0); setPromptCount(updated.count); }
+    if (!phone) { const updated = incrementTokens(50); setPromptCount(updated.tokens); setTokenResetAt(updated.resetAt); }
 
     // Handle booking queries locally without calling the API
     if (isBookingQuery) {
@@ -1501,12 +1529,18 @@ export default function AnbuHealthAI() {
         compliance_disclaimer: result.compliance_disclaimer,
         emergency_alert: result.emergency_alert,
       });
-      if (result.prompts && typeof result.prompts.count === "number") setPromptCount(result.prompts.count);
+      // Track tokens from API response
+      const usedTokens = result.usage?.total_tokens || result.prompts?.tokens_used || 50;
+      if (phone) {
+        const updated = incrementTokens(usedTokens);
+        setPromptCount(updated.tokens);
+        setTokenResetAt(updated.resetAt);
+      }
     } catch (e) {
       if (e.message === "DAILY_LIMIT") {
-        if (e.prompts && typeof e.prompts.count === "number") setPromptCount(e.prompts.count);
-        else setPromptCount(MAX_PROMPTS);
-        addMessage(activeChatId, { id:Date.now()+1,role:"assistant",content:e.message_ta||"Today's 20 prompts முடிந்தது. நாளைக்கு வா!",timestamp:Date.now() });
+        const updated2 = incrementTokens(50);
+        setPromptCount(updated2.tokens); setTokenResetAt(updated2.resetAt);
+        addMessage(activeChatId, { id:Date.now()+1,role:"assistant",content:e.message_ta||`Token limit (${MAX_TOKENS_PER_DAY}) exceeded. Try after ${getTimeUntilReset(tokenResetAt)}!`,timestamp:Date.now() });
       } else {
         addMessage(activeChatId, { id:Date.now()+1,role:"assistant",content:"Sorry, error ஆச்சு. Try again.",timestamp:Date.now() });
       }
@@ -1544,6 +1578,7 @@ export default function AnbuHealthAI() {
     setChats([{ id:newId,title:"New Chat",messages:[] }]);
     setActiveChatId(newId);
     setPromptCount(0);
+    setTokenResetAt(Date.now() + RESET_HOURS * 3600000);
     setSidebarOpen(false);
   };
 
@@ -1568,12 +1603,16 @@ export default function AnbuHealthAI() {
 
   const handleLoginSuccess = useCallback(async (u) => {
     setUser(u); setShowOTP(false);
+    // Load token data from local storage on login (server counts are separate)
+    const tokenData = getTokenData();
+    setPromptCount(tokenData.tokens);
+    setTokenResetAt(tokenData.resetAt);
     if (u?.prompts && typeof u.prompts.count === "number") {
-      setPromptCount(u.prompts.count);
+      // optionally sync server count into token data
     } else {
       try {
         const status = await apiUserStatus(u.phone, u.authToken || null);
-        if (status && typeof status.count === "number") setPromptCount(status.count);
+        if (status) { /* server status available */ }
       } catch {}
     }
     try {
@@ -1614,7 +1653,7 @@ export default function AnbuHealthAI() {
       {showConsent && <ConsentModal onConsent={() => setShowConsent(false)} />}
       {showOTP && <OTPModal onSuccess={handleLoginSuccess} onClose={() => setShowOTP(false)} />}
 
-      <Sidebar visible={sidebarOpen} onClose={()=>setSidebarOpen(false)} chats={chats} activeChatId={activeChatId} onNewChat={handleNewChat} onSelectChat={setActiveChatId} onDeleteChat={handleDeleteChat} onLogout={handleLogout} user={user} promptCount={promptCount} />
+      <Sidebar visible={sidebarOpen} onClose={()=>setSidebarOpen(false)} chats={chats} activeChatId={activeChatId} onNewChat={handleNewChat} onSelectChat={setActiveChatId} onDeleteChat={handleDeleteChat} onLogout={handleLogout} user={user} promptCount={promptCount} tokenResetAt={tokenResetAt} />
       {showUploadModal && <UploadModal mode={uploadMode} onClose={()=>setShowUploadModal(false)} onUpload={handleUpload} />}
       {showPlusMenu && <div onClick={()=>setShowPlusMenu(false)} style={{ position:"fixed",inset:0,zIndex:20 }} />}
 
@@ -1662,10 +1701,10 @@ export default function AnbuHealthAI() {
       )}
 
       {/* Prompt limit warning */}
-      {promptCount >= MAX_PROMPTS && (
+      {promptCount >= MAX_TOKENS_PER_DAY && (
         <div style={{ padding:"8px 16px",maxWidth:696,margin:"0 auto",width:"100%" }}>
           <div style={{ background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:10,padding:"8px 14px",fontSize:12,color:"#fca5a5",textAlign:"center" }}>
-            ⚠️ Today's 20 prompts மொத்தமும் use ஆயிட்டு. நாளைக்கு வா! (Resets at midnight)
+            ⚠️ Daily 5000 token limit reached. 🕐 Try after {getTimeUntilReset(tokenResetAt)}
           </div>
         </div>
       )}
@@ -1699,16 +1738,16 @@ export default function AnbuHealthAI() {
           <textarea ref={inputRef} value={inputText} onChange={e=>setInputText(e.target.value)}
             onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); handleSend(); } }}
             placeholder={isListening?"🎤 Listening... (Tamil/English)":"கேள்வி கேளுங்க... (Tamil or English)"}
-            rows={1} disabled={promptCount>=MAX_PROMPTS}
-            style={{ flex:1,background:"none",border:"none",color:"rgba(255,255,255,0.9)",fontSize:14,lineHeight:1.5,resize:"none",padding:"8px 4px",maxHeight:120,overflowY:"auto",outline:"none",opacity:promptCount>=MAX_PROMPTS?0.4:1 }} />
+            rows={1} disabled={promptCount>=MAX_TOKENS_PER_DAY}
+            style={{ flex:1,background:"none",border:"none",color:"rgba(255,255,255,0.9)",fontSize:14,lineHeight:1.5,resize:"none",padding:"8px 4px",maxHeight:120,overflowY:"auto",outline:"none",opacity:promptCount>=MAX_TOKENS_PER_DAY?0.4:1 }} />
 
           <button onClick={handleVoice}
             style={{ width:36,height:36,borderRadius:10,border:"none",background:isListening?"rgba(239,68,68,0.2)":"rgba(255,255,255,0.07)",color:isListening?"#ef4444":"rgba(255,255,255,0.5)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.2s" }}>
             <MicIcon active={isListening} />
           </button>
 
-          <button onClick={()=>handleSend()} disabled={(!inputText.trim()&&!pendingFile)||isLoading||promptCount>=MAX_PROMPTS}
-            style={{ width:36,height:36,borderRadius:10,border:"none",background:(inputText.trim()||pendingFile)&&!isLoading&&promptCount<MAX_PROMPTS?"linear-gradient(135deg, #059669, #10b981)":"rgba(255,255,255,0.07)",color:(inputText.trim()||pendingFile)&&!isLoading&&promptCount<MAX_PROMPTS?"white":"rgba(255,255,255,0.25)",cursor:(inputText.trim()||pendingFile)&&!isLoading&&promptCount<MAX_PROMPTS?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.2s",boxShadow:(inputText.trim()||pendingFile)&&!isLoading?"0 4px 12px rgba(16,185,129,0.3)":"none" }}>
+          <button onClick={()=>handleSend()} disabled={(!inputText.trim()&&!pendingFile)||isLoading||promptCount>=MAX_TOKENS_PER_DAY}
+            style={{ width:36,height:36,borderRadius:10,border:"none",background:(inputText.trim()||pendingFile)&&!isLoading&&promptCount<MAX_TOKENS_PER_DAY?"linear-gradient(135deg, #059669, #10b981)":"rgba(255,255,255,0.07)",color:(inputText.trim()||pendingFile)&&!isLoading&&promptCount<MAX_TOKENS_PER_DAY?"white":"rgba(255,255,255,0.25)",cursor:(inputText.trim()||pendingFile)&&!isLoading&&promptCount<MAX_TOKENS_PER_DAY?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.2s",boxShadow:(inputText.trim()||pendingFile)&&!isLoading?"0 4px 12px rgba(16,185,129,0.3)":"none" }}>
             <SendIcon />
           </button>
         </div>
