@@ -141,7 +141,6 @@ async function apiUserHistory(phone, authToken) {
 
 // ── Token counter (localStorage fallback) ─────────────────────────────────────
 const MAX_PROMPTS = 20; // kept for backward UI compat (used in Sidebar display)
-const MAX_TOKENS_PER_DAY = 50000;
 function getPromptData() {
   try {
     const data = JSON.parse(localStorage.getItem("anbu_prompts") || "{}");
@@ -149,12 +148,6 @@ function getPromptData() {
     if (data.date !== today) return { count: 0, tokens: 0, date: today };
     return data;
   } catch { return { count: 0, tokens: 0, date: new Date().toDateString() }; }
-}
-function incrementPrompt() {
-  const data = getPromptData();
-  const updated = { ...data, count: data.count + 1, date: new Date().toDateString() };
-  try { localStorage.setItem("anbu_prompts", JSON.stringify(updated)); } catch {}
-  return updated.count;
 }
 function incrementTokens(tokensUsed) {
   const data = getPromptData();
@@ -1512,7 +1505,7 @@ export default function AnbuHealthAI() {
         addMessage(activeChatId, { id:Date.now()+1,role:"assistant",content:"Sorry, error ஆச்சு. Try again.",timestamp:Date.now() });
       }
     } finally { setIsLoading(false); }
-  }, [inputText, pendingFile, pendingMode, promptCount, activeChatId, addMessage, user]);
+  }, [inputText, pendingFile, pendingMode, promptCount, activeChatId, addMessage, user, messages]);
 
   handleSendRef.current = handleSend;
 
