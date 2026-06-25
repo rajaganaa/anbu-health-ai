@@ -1727,7 +1727,7 @@ export default function AnbuHealthAI() {
         addMessage(activeChatId, { id:Date.now()+1,role:"assistant",content:"Sorry, error ஆச்சு. Try again.",timestamp:Date.now() });
       }
     } finally { setIsLoading(false); }
-  }, [inputText, pendingFile, pendingMode, promptCount, activeChatId, addMessage, user, messages, tokenResetAt]);
+  }, [inputText, pendingFile, pendingMode, promptCount, activeChatId, addMessage, user, messages, tokenResetAt, fileVault]);
 
   handleSendRef.current = handleSend;
 
