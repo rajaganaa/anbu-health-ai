@@ -765,6 +765,25 @@ function MessageBubble({ msg, isLast, onFollowUp }) {
           {hasLabOrScan && !hasMedicine && (isScan ? <StructuredScanResult data={msg.structured} onFollowUp={onFollowUp} /> : <StructuredLabResult data={msg.structured} onFollowUp={onFollowUp} />)}
           {hasMedicine && <StructuredMedicineResult data={msg.structured} onFollowUp={onFollowUp} />}
           {!isUser && <ComplianceDisclaimer text={msg.compliance_disclaimer} />}
+          {!isUser && msg.webCitations && msg.webCitations.length > 0 && (
+            <div style={{ marginTop:8,padding:"8px 10px",borderRadius:8,background:"rgba(16,185,129,0.06)",border:"1px solid rgba(16,185,129,0.15)" }}>
+              <div style={{ fontSize:10,color:"rgba(16,185,129,0.7)",fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:1 }}>🌐 Sources — Verify here</div>
+              {msg.webCitations.map((cite, i) => {
+                const match = cite.match(/\[(\d+)\] (.+?) — (https?:\/\/.+)/);
+                if (!match) return <div key={i} style={{ fontSize:11,color:"rgba(255,255,255,0.4)",marginBottom:2 }}>{cite}</div>;
+                const [, num, name, url] = match;
+                return (
+                  <div key={i} style={{ display:"flex",alignItems:"center",gap:6,marginBottom:3 }}>
+                    <span style={{ fontSize:10,color:"rgba(16,185,129,0.6)",fontWeight:700,flexShrink:0 }}>[{num}]</span>
+                    <a href={url} target="_blank" rel="noopener noreferrer"
+                       style={{ fontSize:11,color:"rgba(99,185,255,0.8)",textDecoration:"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>
+                      {name}
+                    </a>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
         {!isUser && (
           <div style={{ display:"flex",gap:8,marginTop:5,paddingLeft:4 }}>
@@ -1461,9 +1480,34 @@ export default function AnbuHealthAI() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
-      rec.lang = "ta-IN"; rec.continuous = false; rec.interimResults = false;
+      // Support both Tamil and English - browser picks best match
+      rec.lang = "ta-IN";
+      rec.continuous = false;
+      rec.interimResults = true; // show interim so user sees it's working
+      rec.maxAlternatives = 3;
       rec.onend = () => setIsListening(false);
-      rec.onerror = () => setIsListening(false);
+      rec.onerror = (e) => {
+        console.warn("[Voice] error:", e.error);
+        // If Tamil fails, retry with English
+        if (e.error === "no-speech" || e.error === "language-not-supported") {
+          try {
+            const rec2 = new SpeechRecognition();
+            rec2.lang = "en-IN";
+            rec2.continuous = false;
+            rec2.interimResults = false;
+            rec2.onresult = (ev) => {
+              const t = ev.results[0][0].transcript;
+              setInputText(t); setIsListening(false);
+              setTimeout(() => handleSendRef.current(t), 300);
+            };
+            rec2.onerror = () => setIsListening(false);
+            rec2.onend = () => setIsListening(false);
+            rec2.start();
+          } catch {}
+        } else {
+          setIsListening(false);
+        }
+      };
       recognitionRef.current = rec;
     }
   }, []);
@@ -1524,7 +1568,9 @@ export default function AnbuHealthAI() {
         content: result.answer,
         structured: result.structured,
         fileMode: modeForAPI,
-        fileContext: result.file_context || null,  // store raw extracted file data
+        fileContext: result.file_context || null,
+        webCitations: result.web_citations || [],
+        webAnswer: result.web_answer || "",
         timestamp: Date.now(),
         compliance_disclaimer: result.compliance_disclaimer,
         emergency_alert: result.emergency_alert,
@@ -1552,15 +1598,51 @@ export default function AnbuHealthAI() {
   const handleUpload = (file, mode) => { setPendingFile(file); setPendingMode(mode); setShowUploadModal(false); inputRef.current?.focus(); };
 
   const handleVoice = () => {
-    if (!recognitionRef.current) { alert("Voice not supported in this browser"); return; }
-    if (isListening) { recognitionRef.current.stop(); setIsListening(false); }
-    else {
-      recognitionRef.current.onresult = (e) => {
-        const transcript = e.results[0][0].transcript;
-        setInputText(transcript); setIsListening(false);
-        setTimeout(() => handleSendRef.current(transcript), 300);
-      };
-      recognitionRef.current.start(); setIsListening(true);
+    if (!recognitionRef.current) {
+      alert("Voice not supported in this browser. Please use Chrome or Edge.");
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+    // Set handlers BEFORE calling start()
+    recognitionRef.current.onresult = (e) => {
+      let finalTranscript = "";
+      let interimTranscript = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) {
+          finalTranscript += t;
+        } else {
+          interimTranscript += t;
+        }
+      }
+      // Show interim text while speaking
+      if (interimTranscript) setInputText("🎤 " + interimTranscript);
+      // On final result — send it
+      if (finalTranscript) {
+        const cleaned = finalTranscript.trim();
+        setInputText(cleaned);
+        setIsListening(false);
+        setTimeout(() => handleSendRef.current(cleaned), 300);
+      }
+    };
+    recognitionRef.current.onend = () => setIsListening(false);
+    recognitionRef.current.onerror = (e) => {
+      console.warn("[Voice] error:", e.error);
+      setIsListening(false);
+      if (e.error === "not-allowed") {
+        alert("Microphone access denied. Please allow microphone in browser settings.");
+      }
+    };
+    try {
+      recognitionRef.current.start();
+      setIsListening(true);
+    } catch(e) {
+      console.warn("[Voice] start failed:", e);
+      setIsListening(false);
     }
   };
 
