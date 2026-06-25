@@ -2,7 +2,7 @@
   "name": "anbu-health-ai",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://rajaganaa.github.io/anbu-health-ai",
+  "homepage": "https://anbuclinic.me",
   "dependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
