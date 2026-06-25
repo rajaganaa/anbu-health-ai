@@ -104,15 +104,21 @@ async function callAnbuAPI(message, uploadedFile, mode, phone, chatId, authToken
   const data = await response.json();
   const answer = data.final_answer || data.sakshi?.final_answer || data.buddhi?.draft_answer || "பதில் கிடைக்கவில்லை. மீண்டும் try பண்ணுங்க.";
   const structured = data.buddhi?.structured_response || null;
+  // vision_data = raw GPT-4o/Groq extraction from the uploaded file.
+  // Store this in fileVault so follow-up questions work without re-uploading.
+  const vision_data = (data.vision && !data.vision.error) ? data.vision : null;
   return {
     mode: data.mode,
     answer,
     structured,
+    vision_data,
     prompts: data.prompts || null,
     compliance_disclaimer: data.compliance_disclaimer || null,
     emergency_alert: data.emergency_alert || null,
   };
 }
+
+ 
 
 // ── Firebase Auth API ──────────────────────────────────────────────────────────
 async function apiFirebaseSession(idToken) {
@@ -1654,20 +1660,19 @@ export default function AnbuHealthAI() {
           } catch {}
           return { ...e, score };
         });
-        // Sort by relevance — pick top match, but also include all contexts for full memory
+                // Sort by relevance — send best match first
         scored.sort((a, b) => b.score - a.score);
-        const best = scored[0];
-        // Build combined JSON with all files labeled
-        const combined = {
-          primary: best.fileContext ? JSON.parse(best.fileContext) : {},
-          all_files: scored.map(e => ({
-            file: e.fileName,
-            mode: e.mode,
-            context: e.fileContext ? JSON.parse(e.fileContext) : {}
-          }))
-        };
+        // Build vault in {filename: visionDict} format so backend can unwrap cleanly.
+        // Backend main.py expects exactly this format for multi-file merging.
+        const combined = {};
+        scored.forEach(e => {
+          try {
+            combined[e.fileName || `file_${e.mode}`] = JSON.parse(e.fileContext || "{}");
+          } catch {}
+        });
         return JSON.stringify(combined);
       };
+
 
       // Determine file context to send
       let activeFileContext = null;
@@ -1684,13 +1689,16 @@ export default function AnbuHealthAI() {
       }
 
       const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId, authToken, messages, activeFileContext);
-      // Store in FILE VAULT if this was a file upload
-      if (fileForAPI && result.file_context) {
+            // Store in FILE VAULT if this was a file upload with successful vision extraction.
+      // vision_data = raw structured dict { lab_name, tests, patient_name, ... }
+      // Attach mode so backend can restore the correct prompt on follow-ups.
+      if (fileForAPI && result.vision_data) {
         const vaultKey = fileForAPI.name || `file_${Date.now()}`;
+        const vaultEntry = { ...result.vision_data, mode: modeForAPI };
         setFileVault(prev => ({
           ...prev,
           [vaultKey]: {
-            fileContext: result.file_context,
+            fileContext: JSON.stringify(vaultEntry),
             mode: modeForAPI,
             fileName: fileForAPI.name,
             uploadedAt: Date.now(),
