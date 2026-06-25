@@ -125,13 +125,6 @@ async function apiFirebaseSession(idToken) {
   return data; // { phone, prompts }
 }
 
-async function apiUserStatus(phone, authToken) {
-  const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
-  const r = await fetch(`${API_URL}/api/user/status?phone=${encodeURIComponent(phone)}`, { headers });
-  if (!r.ok) return null;
-  return r.json();
-}
-
 async function apiUserHistory(phone, authToken) {
   const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
   const r = await fetch(`${API_URL}/api/user/history?phone=${encodeURIComponent(phone)}`, { headers });
@@ -175,8 +168,7 @@ function getTimeUntilReset(resetAt) {
   return `${h}h ${m}m`;
 }
 
-// Keep MAX_PROMPTS as alias so sidebar progress bar still works
-const MAX_PROMPTS = MAX_TOKENS_PER_DAY;
+
 
 // ── 1. StructuredLabResult ────────────────────────────────────────────────────
 function StructuredLabResult({ data, onFollowUp }) {
@@ -1553,7 +1545,7 @@ export default function AnbuHealthAI() {
         addMessage(activeChatId, { id:Date.now()+1,role:"assistant",content:"Sorry, error ஆச்சு. Try again.",timestamp:Date.now() });
       }
     } finally { setIsLoading(false); }
-  }, [inputText, pendingFile, pendingMode, promptCount, activeChatId, addMessage, user, messages]);
+  }, [inputText, pendingFile, pendingMode, promptCount, activeChatId, addMessage, user, messages, tokenResetAt]);
 
   handleSendRef.current = handleSend;
 
