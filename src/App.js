@@ -1109,6 +1109,74 @@ function DeleteDataModal({ defaultPhone, onClose, onDeleted }) {
   );
 }
 
+// ── TechStack Modal ──────────────────────────────────────────────────────────
+function TechStackModal({ onClose }) {
+  const stack = [
+    { category: "Frontend", items: [
+      { name: "React 18", desc: "UI framework", icon: "⚛️" },
+      { name: "Firebase Auth", desc: "Phone OTP login", icon: "🔐" },
+      { name: "Web Speech API", desc: "Voice input (Tamil + English)", icon: "🎤" },
+      { name: "GitHub Pages", desc: "Frontend hosting", icon: "🌐" },
+    ]},
+    { category: "Backend", items: [
+      { name: "FastAPI (Python)", desc: "REST API server", icon: "⚡" },
+      { name: "Groq (LLaMA 3.3 70B)", desc: "Main LLM for Tamil/English", icon: "🤖" },
+      { name: "GPT-4o Vision", desc: "Lab/Scan/Medicine image reading", icon: "👁️" },
+      { name: "Azure Container Apps", desc: "Backend hosting + Docker", icon: "☁️" },
+    ]},
+    { category: "AI Pipeline", items: [
+      { name: "Manas", desc: "Question routing + language detect", icon: "🧭" },
+      { name: "Chitta (RAG)", desc: "Medical knowledge retrieval", icon: "📚" },
+      { name: "Buddhi", desc: "LLM reasoning + answer gen", icon: "🧠" },
+      { name: "Ahamkara", desc: "Confidence scoring", icon: "📊" },
+      { name: "Sakshi", desc: "Safety + compliance check", icon: "🛡️" },
+    ]},
+    { category: "Storage & Search", items: [
+      { name: "Supabase (PostgreSQL)", desc: "User data + chat history", icon: "🗄️" },
+      { name: "Qdrant", desc: "Vector DB for RAG", icon: "🔍" },
+      { name: "DuckDuckGo API", desc: "Live web search + citations", icon: "🌐" },
+      { name: "Redis", desc: "OTP + rate limit cache", icon: "⚡" },
+    ]},
+    { category: "Compliance", items: [
+      { name: "DPDP Act 2023", desc: "Indian data protection law", icon: "⚖️" },
+      { name: "Firebase Security", desc: "Phone verification", icon: "🔒" },
+      { name: "Patent", desc: "202641043947 — Rajaganapathy M", icon: "📜" },
+    ]},
+  ];
+  return (
+    <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:16,overflowY:"auto" }}>
+      <div style={{ background:"#0f1117",border:"1px solid rgba(16,185,129,0.25)",borderRadius:20,padding:24,width:"100%",maxWidth:420,position:"relative",maxHeight:"90vh",overflowY:"auto" }}>
+        <button onClick={onClose} style={{ position:"absolute",top:12,right:14,background:"none",border:"none",color:"rgba(255,255,255,0.4)",fontSize:20,cursor:"pointer" }}>✕</button>
+        <div style={{ textAlign:"center",marginBottom:20 }}>
+          <div style={{ fontSize:28,marginBottom:6 }}>🏗️</div>
+          <h3 style={{ margin:0,fontSize:16,fontWeight:700,color:"white" }}>Anbu Health AI</h3>
+          <p style={{ margin:"4px 0 0",fontSize:11,color:"rgba(255,255,255,0.4)" }}>Technical Stack</p>
+        </div>
+        {stack.map(sec => (
+          <div key={sec.category} style={{ marginBottom:16 }}>
+            <div style={{ fontSize:10,color:"rgba(16,185,129,0.7)",textTransform:"uppercase",letterSpacing:1,fontWeight:700,marginBottom:8 }}>{sec.category}</div>
+            <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+              {sec.items.map(item => (
+                <div key={item.name} style={{ display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"8px 12px" }}>
+                  <span style={{ fontSize:16,flexShrink:0 }}>{item.icon}</span>
+                  <div>
+                    <div style={{ fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.85)" }}>{item.name}</div>
+                    <div style={{ fontSize:11,color:"rgba(255,255,255,0.4)" }}>{item.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div style={{ marginTop:12,padding:"10px 14px",borderRadius:10,background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.15)",textAlign:"center" }}>
+          <div style={{ fontSize:11,color:"rgba(16,185,129,0.8)",fontWeight:600 }}>File Vault Memory System</div>
+          <div style={{ fontSize:10,color:"rgba(255,255,255,0.4)",marginTop:3 }}>All uploaded files stored in session memory — ask about any doc at any time</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── BookingCard — Anbu Clinic appointment details ──────────────────────────────
 function BookingCard({ onClose }) {
   return (
@@ -1145,32 +1213,30 @@ function BookingCard({ onClose }) {
 }
 
 // ── PrivacyLinks — Privacy Policy / Terms / Delete My Data (sidebar footer) ───
-function PrivacyLinks({ user }) {
+function PrivacyLinks({ user, fileVault, showTechStack, setShowTechStack }) {
   const [showDelete, setShowDelete] = useState(false);
   const [showBooking, setShowBooking] = useState(false);
   const [showDev, setShowDev] = useState(false);
+  const vaultCount = Object.keys(fileVault || {}).length;
   return (
     <div style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+      {vaultCount > 0 && (
+        <div style={{ marginBottom:8,padding:"6px 10px",borderRadius:8,background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.15)",fontSize:11,color:"rgba(16,185,129,0.8)" }}>
+          🗄️ {vaultCount} file{vaultCount>1?"s":""} in memory — ask about them anytime
+        </div>
+      )}
       <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>Legal</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <a
-          href="/privacy-policy.html"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", textDecoration: "none" }}
-        >
+        <a href="/privacy-policy.html" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", textDecoration: "none" }}>
           🔒 Privacy Policy (DPDP Act 2023)
         </a>
-        <button
-          onClick={() => setShowBooking(true)}
-          style={{ background:"none",border:"none",padding:0,cursor:"pointer",fontSize:12,color:"rgba(16,185,129,0.7)",textAlign:"left",fontFamily:"inherit" }}
-        >
+        <button onClick={() => setShowBooking(true)} style={{ background:"none",border:"none",padding:0,cursor:"pointer",fontSize:12,color:"rgba(16,185,129,0.7)",textAlign:"left",fontFamily:"inherit" }}>
           🏥 Book Appointment
         </button>
-        <button
-          onClick={() => setShowDev(v => !v)}
-          style={{ background:"none",border:"none",padding:0,cursor:"pointer",fontSize:12,color:"rgba(255,255,255,0.35)",textAlign:"left",fontFamily:"inherit" }}
-        >
+        <button onClick={() => setShowTechStack(true)} style={{ background:"none",border:"none",padding:0,cursor:"pointer",fontSize:12,color:"rgba(99,102,241,0.7)",textAlign:"left",fontFamily:"inherit" }}>
+          🏗️ Tech Stack
+        </button>
+        <button onClick={() => setShowDev(v => !v)} style={{ background:"none",border:"none",padding:0,cursor:"pointer",fontSize:12,color:"rgba(255,255,255,0.35)",textAlign:"left",fontFamily:"inherit" }}>
           👨‍💻 Developer Contact
         </button>
         {showDev && (
@@ -1180,21 +1246,13 @@ function PrivacyLinks({ user }) {
             <div><a href="tel:9176631419" style={{ color:"rgba(255,255,255,0.4)",textDecoration:"none" }}>📞 9176631419</a></div>
           </div>
         )}
-        <button
-          onClick={() => setShowDelete(true)}
-          style={{ background:"none",border:"none",padding:0,cursor:"pointer",fontSize:12,color:"rgba(239,68,68,0.6)",textAlign:"left",fontFamily:"inherit" }}
-        >
+        <button onClick={() => setShowDelete(true)} style={{ background:"none",border:"none",padding:0,cursor:"pointer",fontSize:12,color:"rgba(239,68,68,0.6)",textAlign:"left",fontFamily:"inherit" }}>
           🗑️ Delete My Data
         </button>
       </div>
-      {showDelete && (
-        <DeleteDataModal
-          defaultPhone={user?.phone}
-          onClose={() => setShowDelete(false)}
-          onDeleted={() => setShowDelete(false)}
-        />
-      )}
+      {showDelete && <DeleteDataModal defaultPhone={user?.phone} onClose={() => setShowDelete(false)} onDeleted={() => setShowDelete(false)} />}
       {showBooking && <BookingCard onClose={() => setShowBooking(false)} />}
+      {showTechStack && <TechStackModal onClose={() => setShowTechStack(false)} />}
     </div>
   );
 }
@@ -1347,7 +1405,7 @@ function OTPModal({ onSuccess, onClose }) {
   );
 }
 
-function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, onLogout, user, promptCount, tokenResetAt, onClose, visible }) {
+function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, onLogout, user, promptCount, tokenResetAt, fileVault, showTechStack, setShowTechStack, onClose, visible }) {
   const tokenPct = Math.min((promptCount / MAX_TOKENS_PER_DAY) * 100, 100);
   const exceeded = promptCount >= MAX_TOKENS_PER_DAY;
   const resetLabel = tokenResetAt ? getTimeUntilReset(tokenResetAt) : "";
@@ -1409,7 +1467,7 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, o
         <div style={{ padding:"8px 16px",borderTop:"1px solid rgba(255,255,255,0.06)" }}>
           <button onClick={()=>{ if(window.confirm("Clear all chats?")) onDeleteChat("all"); }} style={{ width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid rgba(239,68,68,0.2)",background:"rgba(239,68,68,0.05)",color:"rgba(239,68,68,0.6)",fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s" }}>🗑 Clear All Chats</button>
         </div>
-        <PrivacyLinks user={user} />
+        <PrivacyLinks user={user} fileVault={fileVault} showTechStack={showTechStack} setShowTechStack={setShowTechStack} />
       </div>
     </>
   );
@@ -1464,6 +1522,11 @@ export default function AnbuHealthAI() {
   const [pendingMode, setPendingMode] = useState(null);
   const [chats, setChats] = useState([{ id:"c1",title:"New Chat",messages:[] }]);
   const [activeChatId, setActiveChatId] = useState("c1");
+  // FILE VAULT — stores ALL uploaded file contexts permanently for the session
+  // Key = filename, Value = { fileContext (JSON), mode, fileName, uploadedAt }
+  // This is the core memory system — every uploaded doc stays accessible forever
+  const [fileVault, setFileVault] = useState({});
+  const [showTechStack, setShowTechStack] = useState(false);
 
   const messagesEndRef = useRef(null);
   const inputRef       = useRef(null);
@@ -1555,13 +1618,86 @@ export default function AnbuHealthAI() {
     }
 
     try {
-      // Find the most recent fileContext from chat messages for follow-up accuracy
-      const activeFileContext = (() => {
-        if (fileForAPI) return null; // new file upload — no previous context needed
+      // ── FILE VAULT CONTEXT SYSTEM ─────────────────────────────────────────
+      // Build combined context from ALL uploaded files in this session
+      // This is the core memory — user can ask about ANY uploaded doc at ANY time
+      const buildVaultContext = (vault, currentQuestion) => {
+        const entries = Object.values(vault);
+        if (entries.length === 0) return null;
+        // If only one file — use it directly
+        if (entries.length === 1) return entries[0].fileContext;
+        // Multiple files — find most relevant based on question keywords
+        const q = currentQuestion.toLowerCase();
+        const scored = entries.map(e => {
+          let score = 0;
+          try {
+            const fc = JSON.parse(e.fileContext || "{}");
+            // Score by mode match
+            if (q.includes("lab") || q.includes("report") || q.includes("result") || q.includes("blood") || q.includes("sugar") || q.includes("glucose") || q.includes("hba1c")) {
+              if (e.mode === "lab") score += 10;
+            }
+            if (q.includes("scan") || q.includes("mri") || q.includes("xray") || q.includes("x-ray") || q.includes("bone") || q.includes("brain") || q.includes("elbow")) {
+              if (e.mode === "scan") score += 10;
+            }
+            if (q.includes("medicine") || q.includes("tablet") || q.includes("drug") || q.includes("dose") || q.includes("paracetamol") || q.includes("மருந்து") || q.includes("மாத்திரை")) {
+              if (e.mode === "medicine") score += 10;
+            }
+            // Score by patient name / lab name mention
+            const patName = (fc.patient_name || "").toLowerCase();
+            const labName = (fc.lab_name || "").toLowerCase();
+            const drugName = (fc.drug_name || "").toLowerCase();
+            if (patName && q.includes(patName.split(" ")[0])) score += 15;
+            if (labName && q.includes(labName.split(" ")[0].toLowerCase())) score += 15;
+            if (drugName && q.includes(drugName.toLowerCase())) score += 15;
+            // Filename match
+            if (e.fileName && q.includes(e.fileName.toLowerCase().split(".")[0])) score += 8;
+          } catch {}
+          return { ...e, score };
+        });
+        // Sort by relevance — pick top match, but also include all contexts for full memory
+        scored.sort((a, b) => b.score - a.score);
+        const best = scored[0];
+        // Build combined JSON with all files labeled
+        const combined = {
+          primary: best.fileContext ? JSON.parse(best.fileContext) : {},
+          all_files: scored.map(e => ({
+            file: e.fileName,
+            mode: e.mode,
+            context: e.fileContext ? JSON.parse(e.fileContext) : {}
+          }))
+        };
+        return JSON.stringify(combined);
+      };
+
+      // Determine file context to send
+      let activeFileContext = null;
+      if (fileForAPI) {
+        // New file upload — context will be set after API call and stored in vault
+        activeFileContext = null;
+      } else if (Object.keys(fileVault).length > 0) {
+        // Use vault — covers ALL previously uploaded files
+        activeFileContext = buildVaultContext(fileVault, msgText);
+      } else {
+        // Fallback to most recent from chat messages
         const recentFile = [...messages].reverse().find(m => m.role === "assistant" && m.fileContext);
-        return recentFile ? recentFile.fileContext : null;
-      })();
+        activeFileContext = recentFile ? recentFile.fileContext : null;
+      }
+
       const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId, authToken, messages, activeFileContext);
+      // Store in FILE VAULT if this was a file upload
+      if (fileForAPI && result.file_context) {
+        const vaultKey = fileForAPI.name || `file_${Date.now()}`;
+        setFileVault(prev => ({
+          ...prev,
+          [vaultKey]: {
+            fileContext: result.file_context,
+            mode: modeForAPI,
+            fileName: fileForAPI.name,
+            uploadedAt: Date.now(),
+          }
+        }));
+      }
+
       addMessage(activeChatId, {
         id: Date.now()+1,
         role: "assistant",
@@ -1661,6 +1797,7 @@ export default function AnbuHealthAI() {
     setActiveChatId(newId);
     setPromptCount(0);
     setTokenResetAt(Date.now() + RESET_HOURS * 3600000);
+    setFileVault({});
     setSidebarOpen(false);
   };
 
@@ -1748,7 +1885,7 @@ export default function AnbuHealthAI() {
       {showConsent && <ConsentModal onConsent={() => setShowConsent(false)} />}
       {showOTP && <OTPModal onSuccess={handleLoginSuccess} onClose={() => setShowOTP(false)} />}
 
-      <Sidebar visible={sidebarOpen} onClose={()=>setSidebarOpen(false)} chats={chats} activeChatId={activeChatId} onNewChat={handleNewChat} onSelectChat={setActiveChatId} onDeleteChat={handleDeleteChat} onLogout={handleLogout} user={user} promptCount={promptCount} tokenResetAt={tokenResetAt} />
+      <Sidebar visible={sidebarOpen} onClose={()=>setSidebarOpen(false)} chats={chats} activeChatId={activeChatId} onNewChat={handleNewChat} onSelectChat={setActiveChatId} onDeleteChat={handleDeleteChat} onLogout={handleLogout} user={user} promptCount={promptCount} tokenResetAt={tokenResetAt} fileVault={fileVault} showTechStack={showTechStack} setShowTechStack={setShowTechStack} />
       {showUploadModal && <UploadModal mode={uploadMode} onClose={()=>setShowUploadModal(false)} onUpload={handleUpload} />}
       {showPlusMenu && <div onClick={()=>setShowPlusMenu(false)} style={{ position:"fixed",inset:0,zIndex:20 }} />}
 
