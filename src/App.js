@@ -141,19 +141,19 @@ async function apiUserHistory(phone, authToken) {
   return { messages: data.messages || [], document_vaults: data.document_vaults || {} };
 }
 
-async function apiClearContext(phone, chatId, authToken, fileKey) {
-  const formData = new FormData();
-  formData.append("phone", phone);
-  formData.append("chat_id", chatId || "default");
-  if (fileKey) formData.append("file_key", fileKey);
-  const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
-  try {
-    const r = await fetch(`${API_URL}/api/chat/clear-context`, { method: "POST", headers, body: formData });
-    return r.ok;
-  } catch {
-    return false;
-  }
-}
+// async function apiClearContext(phone, chatId, authToken, fileKey) {
+//   const formData = new FormData();
+//   formData.append("phone", phone);
+//   formData.append("chat_id", chatId || "default");
+//   if (fileKey) formData.append("file_key", fileKey);
+//   const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
+//   try {
+//     const r = await fetch(`${API_URL}/api/chat/clear-context`, { method: "POST", headers, body: formData });
+//     return r.ok;
+//   } catch {
+//     return false;
+//   }
+// }
 
 // ── Token quota (5000 tokens/day, resets every 12 hours) ──────────────────────
 const MAX_TOKENS_PER_DAY = 5000;
@@ -222,12 +222,12 @@ function makeChatId() {
   return `c${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function makeFileKey() {
-  try {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) return `f_${crypto.randomUUID()}`;
-  } catch {}
-  return `f${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
+// function makeFileKey() {
+//   try {
+//     if (typeof crypto !== "undefined" && crypto.randomUUID) return `f_${crypto.randomUUID()}`;
+//   } catch {}
+//   return `f${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+// }
 
 
 
