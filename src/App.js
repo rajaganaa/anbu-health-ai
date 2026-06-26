@@ -82,12 +82,13 @@ const NewChatIcon = () => (
 // ── API ────────────────────────────────────────────────────────────────────────
 const API_URL = "https://anbu-health-ai.kindrock-2ca528ff.centralindia.azurecontainerapps.io";
 
-async function callAnbuAPI(message, uploadedFile, mode, phone, chatId, authToken, chatHistory, fileContext) {
+async function callAnbuAPI(message, uploadedFile, mode, phone, chatId, authToken, chatHistory, fileContext, fileKey) {
   const formData = new FormData();
   formData.append("question", message);
   formData.append("mode", (uploadedFile && mode) ? mode : "general");
   if (uploadedFile) formData.append("image", uploadedFile);
   if (fileContext) formData.append("file_context", fileContext);
+  if (fileKey) formData.append("file_key", fileKey);
   if (phone) formData.append("phone", phone);
   if (chatId) formData.append("chat_id", chatId);
   if (chatHistory && chatHistory.length > 0) formData.append("chat_history", JSON.stringify(chatHistory));
@@ -112,6 +113,7 @@ async function callAnbuAPI(message, uploadedFile, mode, phone, chatId, authToken
     answer,
     structured,
     vision_data,
+    file_key: data.file_key || null,
     prompts: data.prompts || null,
     compliance_disclaimer: data.compliance_disclaimer || null,
     emergency_alert: data.emergency_alert || null,
@@ -134,9 +136,23 @@ async function apiFirebaseSession(idToken) {
 async function apiUserHistory(phone, authToken) {
   const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
   const r = await fetch(`${API_URL}/api/user/history?phone=${encodeURIComponent(phone)}`, { headers });
-  if (!r.ok) return [];
+  if (!r.ok) return { messages: [], document_vaults: {} };
   const data = await r.json();
-  return data.messages || [];
+  return { messages: data.messages || [], document_vaults: data.document_vaults || {} };
+}
+
+async function apiClearContext(phone, chatId, authToken, fileKey) {
+  const formData = new FormData();
+  formData.append("phone", phone);
+  formData.append("chat_id", chatId || "default");
+  if (fileKey) formData.append("file_key", fileKey);
+  const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
+  try {
+    const r = await fetch(`${API_URL}/api/chat/clear-context`, { method: "POST", headers, body: formData });
+    return r.ok;
+  } catch {
+    return false;
+  }
 }
 
 // ── Token quota (5000 tokens/day, resets every 12 hours) ──────────────────────
@@ -172,6 +188,45 @@ function getTimeUntilReset(resetAt) {
   const h = Math.floor(diff / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);
   return `${h}h ${m}m`;
+}
+
+const VAULT_STORAGE_KEY = "anbu_filevault_v1";
+const VAULT_TTL_MS = 24 * 60 * 60 * 1000;
+
+function loadVaultFromStorage() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(VAULT_STORAGE_KEY) || "{}");
+    const now = Date.now();
+    const pruned = {};
+    Object.entries(raw).forEach(([chatId, entries]) => {
+      const kept = {};
+      Object.entries(entries || {}).forEach(([fileKey, entry]) => {
+        if (entry && now - (entry.uploadedAt || 0) < VAULT_TTL_MS) kept[fileKey] = entry;
+      });
+      if (Object.keys(kept).length) pruned[chatId] = kept;
+    });
+    return pruned;
+  } catch {
+    return {};
+  }
+}
+
+function saveVaultToStorage(vault) {
+  try { localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(vault)); } catch {}
+}
+
+function makeChatId() {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return `c_${crypto.randomUUID()}`;
+  } catch {}
+  return `c${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function makeFileKey() {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return `f_${crypto.randomUUID()}`;
+  } catch {}
+  return `f${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 
@@ -1219,17 +1274,28 @@ function BookingCard({ onClose }) {
 }
 
 // ── PrivacyLinks — Privacy Policy / Terms / Delete My Data (sidebar footer) ───
-function PrivacyLinks({ user, fileVault, showTechStack, setShowTechStack }) {
+function PrivacyLinks({ user, fileVault, activeChatId, onClearChatVault, showTechStack, setShowTechStack }) {
   const [showDelete, setShowDelete] = useState(false);
   const [showBooking, setShowBooking] = useState(false);
   const [showDev, setShowDev] = useState(false);
-  const vaultCount = Object.keys(fileVault || {}).length;
+  const vaultCount = Object.values(fileVault || {}).reduce(
+    (sum, chatEntries) => sum + Object.keys(chatEntries || {}).length, 0
+  );
+  const activeChatFileCount = Object.keys((fileVault || {})[activeChatId] || {}).length;
   return (
     <div style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
       {vaultCount > 0 && (
         <div style={{ marginBottom:8,padding:"6px 10px",borderRadius:8,background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.15)",fontSize:11,color:"rgba(16,185,129,0.8)" }}>
           🗄️ {vaultCount} file{vaultCount>1?"s":""} in memory — ask about them anytime
         </div>
+      )}
+      {activeChatFileCount > 0 && onClearChatVault && (
+        <button
+          onClick={() => { if (window.confirm(`Forget ${activeChatFileCount} document${activeChatFileCount>1?"s":""} uploaded in this chat?`)) onClearChatVault(); }}
+          style={{ marginBottom:8,background:"none",border:"1px solid rgba(239,68,68,0.25)",borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:11,color:"rgba(239,68,68,0.75)",textAlign:"left",fontFamily:"inherit",width:"100%" }}
+        >
+          Forget this chat's documents
+        </button>
       )}
       <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>Legal</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -1411,7 +1477,7 @@ function OTPModal({ onSuccess, onClose }) {
   );
 }
 
-function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, onLogout, user, promptCount, tokenResetAt, fileVault, showTechStack, setShowTechStack, onClose, visible }) {
+function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, onClearChatVault, onLogout, user, promptCount, tokenResetAt, fileVault, showTechStack, setShowTechStack, onClose, visible }) {
   const tokenPct = Math.min((promptCount / MAX_TOKENS_PER_DAY) * 100, 100);
   const exceeded = promptCount >= MAX_TOKENS_PER_DAY;
   const resetLabel = tokenResetAt ? getTimeUntilReset(tokenResetAt) : "";
@@ -1473,7 +1539,7 @@ function Sidebar({ chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, o
         <div style={{ padding:"8px 16px",borderTop:"1px solid rgba(255,255,255,0.06)" }}>
           <button onClick={()=>{ if(window.confirm("Clear all chats?")) onDeleteChat("all"); }} style={{ width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid rgba(239,68,68,0.2)",background:"rgba(239,68,68,0.05)",color:"rgba(239,68,68,0.6)",fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s" }}>🗑 Clear All Chats</button>
         </div>
-        <PrivacyLinks user={user} fileVault={fileVault} showTechStack={showTechStack} setShowTechStack={setShowTechStack} />
+        <PrivacyLinks user={user} fileVault={fileVault} activeChatId={activeChatId} onClearChatVault={onClearChatVault} showTechStack={showTechStack} setShowTechStack={setShowTechStack} />
       </div>
     </>
   );
@@ -1526,12 +1592,13 @@ export default function AnbuHealthAI() {
   const [tokenResetAt, setTokenResetAt] = useState(() => getTokenData().resetAt);
   const [pendingFile, setPendingFile] = useState(null);
   const [pendingMode, setPendingMode] = useState(null);
-  const [chats, setChats] = useState([{ id:"c1",title:"New Chat",messages:[] }]);
-  const [activeChatId, setActiveChatId] = useState("c1");
+  const [initialChatId] = useState(() => makeChatId());
+  const [chats, setChats] = useState(() => [{ id:initialChatId,title:"New Chat",messages:[] }]);
+  const [activeChatId, setActiveChatId] = useState(() => initialChatId);
   // FILE VAULT — stores ALL uploaded file contexts permanently for the session
   // Key = filename, Value = { fileContext (JSON), mode, fileName, uploadedAt }
   // This is the core memory system — every uploaded doc stays accessible forever
-  const [fileVault, setFileVault] = useState({});
+  const [fileVault, setFileVault] = useState(() => loadVaultFromStorage());
   const [showTechStack, setShowTechStack] = useState(false);
 
   const messagesEndRef = useRef(null);
@@ -1544,6 +1611,7 @@ export default function AnbuHealthAI() {
   const messages = useMemo(() => activeChat?.messages || [], [activeChatId, chats]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior:"smooth" }); }, [messages, isLoading]);
+  useEffect(() => { saveVaultToStorage(fileVault); }, [fileVault]);
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1627,8 +1695,8 @@ export default function AnbuHealthAI() {
       // ── FILE VAULT CONTEXT SYSTEM ─────────────────────────────────────────
       // Build combined context from ALL uploaded files in this session
       // This is the core memory — user can ask about ANY uploaded doc at ANY time
-      const buildVaultContext = (vault, currentQuestion) => {
-        const entries = Object.values(vault);
+      const buildVaultContext = (chatVault, currentQuestion) => {
+        const entries = Object.entries(chatVault).map(([key, value]) => ({ key, ...value }));
         if (entries.length === 0) return null;
         // If only one file — use it directly
         if (entries.length === 1) return entries[0].fileContext;
@@ -1667,7 +1735,7 @@ export default function AnbuHealthAI() {
         const combined = {};
         scored.forEach(e => {
           try {
-            combined[e.fileName || `file_${e.mode}`] = JSON.parse(e.fileContext || "{}");
+            combined[e.key] = JSON.parse(e.fileContext || "{}");
           } catch {}
         });
         return JSON.stringify(combined);
