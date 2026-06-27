@@ -141,19 +141,19 @@ async function apiUserHistory(phone, authToken) {
   return { messages: data.messages || [], document_vaults: data.document_vaults || {} };
 }
 
-// async function apiClearContext(phone, chatId, authToken, fileKey) {
-//   const formData = new FormData();
-//   formData.append("phone", phone);
-//   formData.append("chat_id", chatId || "default");
-//   if (fileKey) formData.append("file_key", fileKey);
-//   const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
-//   try {
-//     const r = await fetch(`${API_URL}/api/chat/clear-context`, { method: "POST", headers, body: formData });
-//     return r.ok;
-//   } catch {
-//     return false;
-//   }
-// }
+async function apiClearContext(phone, chatId, authToken, fileKey) {
+  const formData = new FormData();
+  formData.append("phone", phone);
+  formData.append("chat_id", chatId || "default");
+  if (fileKey) formData.append("file_key", fileKey);
+  const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
+  try {
+    const r = await fetch(`${API_URL}/api/chat/clear-context`, { method: "POST", headers, body: formData });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
 
 // ── Token quota (5000 tokens/day, resets every 12 hours) ──────────────────────
 const MAX_TOKENS_PER_DAY = 5000;
@@ -190,9 +190,10 @@ function getTimeUntilReset(resetAt) {
   return `${h}h ${m}m`;
 }
 
-const VAULT_STORAGE_KEY = "anbu_filevault_v1";
+const VAULT_STORAGE_KEY = "anbu_filevault_v2"; // v2 = per-chat keying
 const VAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
+// vault shape: { [chatId]: { [fileKey]: { fileContext, mode, fileName, uploadedAt } } }
 function loadVaultFromStorage() {
   try {
     const raw = JSON.parse(localStorage.getItem(VAULT_STORAGE_KEY) || "{}");
@@ -222,12 +223,12 @@ function makeChatId() {
   return `c${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// function makeFileKey() {
-//   try {
-//     if (typeof crypto !== "undefined" && crypto.randomUUID) return `f_${crypto.randomUUID()}`;
-//   } catch {}
-//   return `f${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-// }
+function makeFileKey() {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return `f_${crypto.randomUUID()}`;
+  } catch {}
+  return `f${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 
 
@@ -1595,9 +1596,9 @@ export default function AnbuHealthAI() {
   const [initialChatId] = useState(() => makeChatId());
   const [chats, setChats] = useState(() => [{ id:initialChatId,title:"New Chat",messages:[] }]);
   const [activeChatId, setActiveChatId] = useState(() => initialChatId);
-  // FILE VAULT — stores ALL uploaded file contexts permanently for the session
-  // Key = filename, Value = { fileContext (JSON), mode, fileName, uploadedAt }
-  // This is the core memory system — every uploaded doc stays accessible forever
+  // FILE VAULT — stores uploaded file contexts per-chat, persisted to localStorage
+  // Shape: { [chatId]: { [fileKey]: { fileContext, mode, fileName, uploadedAt } } }
+  // Per-chat scoping prevents lab report in chat A from leaking into chat B.
   const [fileVault, setFileVault] = useState(() => loadVaultFromStorage());
   const [showTechStack, setShowTechStack] = useState(false);
 
@@ -1693,10 +1694,11 @@ export default function AnbuHealthAI() {
 
     try {
       // ── FILE VAULT CONTEXT SYSTEM ─────────────────────────────────────────
-      // Build combined context from ALL uploaded files in this session
-      // This is the core memory — user can ask about ANY uploaded doc at ANY time
-      const buildVaultContext = (chatVault, currentQuestion) => {
-        const entries = Object.entries(chatVault).map(([key, value]) => ({ key, ...value }));
+      // Build combined context from ALL uploaded files in this chat
+      // (scoped per-chat so lab report in chat A can't contaminate chat B)
+      const chatVault = fileVault[activeChatId] || {};
+      const buildVaultContext = (chatVaultEntries, currentQuestion) => {
+        const entries = Object.entries(chatVaultEntries).map(([key, value]) => ({ key, ...value }));
         if (entries.length === 0) return null;
         // If only one file — use it directly
         if (entries.length === 1) return entries[0].fileContext;
@@ -1728,10 +1730,9 @@ export default function AnbuHealthAI() {
           } catch {}
           return { ...e, score };
         });
-                // Sort by relevance — send best match first
+        // Sort by relevance — send best match first
         scored.sort((a, b) => b.score - a.score);
-        // Build vault in {filename: visionDict} format so backend can unwrap cleanly.
-        // Backend main.py expects exactly this format for multi-file merging.
+        // Build vault in {fileKey: visionDict} format so backend can unwrap cleanly.
         const combined = {};
         scored.forEach(e => {
           try {
@@ -1741,36 +1742,43 @@ export default function AnbuHealthAI() {
         return JSON.stringify(combined);
       };
 
+      // Generate a stable file key the server and client will share
+      const clientFileKey = fileForAPI ? makeFileKey() : null;
 
       // Determine file context to send
       let activeFileContext = null;
       if (fileForAPI) {
         // New file upload — context will be set after API call and stored in vault
         activeFileContext = null;
-      } else if (Object.keys(fileVault).length > 0) {
-        // Use vault — covers ALL previously uploaded files
-        activeFileContext = buildVaultContext(fileVault, msgText);
+      } else if (Object.keys(chatVault).length > 0) {
+        // Use vault — covers ALL previously uploaded files in THIS chat
+        activeFileContext = buildVaultContext(chatVault, msgText);
       } else {
         // Fallback to most recent from chat messages
         const recentFile = [...messages].reverse().find(m => m.role === "assistant" && m.fileContext);
         activeFileContext = recentFile ? recentFile.fileContext : null;
       }
 
-      const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId, authToken, messages, activeFileContext);
-            // Store in FILE VAULT if this was a file upload with successful vision extraction.
-      // vision_data = raw structured dict { lab_name, tests, patient_name, ... }
-      // Attach mode so backend can restore the correct prompt on follow-ups.
+      const result = await callAnbuAPI(msgText, fileForAPI, modeForAPI, phone, activeChatId, authToken, messages, activeFileContext, clientFileKey);
+      // Store in FILE VAULT if this was a file upload with successful vision extraction.
+      // Keyed by file_key (server-echoed or client-generated), NOT filename —
+      // two different uploads can share a filename, which would collide.
       if (fileForAPI && result.vision_data) {
-        const vaultKey = fileForAPI.name || `file_${Date.now()}`;
+        // Use the server-echoed key (which matches what was saved to DB), falling
+        // back to the client-generated key if the server didn't echo one yet.
+        const vaultKey = result.file_key || clientFileKey || fileForAPI.name || `file_${Date.now()}`;
         const vaultEntry = { ...result.vision_data, mode: modeForAPI };
         setFileVault(prev => ({
           ...prev,
-          [vaultKey]: {
-            fileContext: JSON.stringify(vaultEntry),
-            mode: modeForAPI,
-            fileName: fileForAPI.name,
-            uploadedAt: Date.now(),
-          }
+          [activeChatId]: {
+            ...(prev[activeChatId] || {}),
+            [vaultKey]: {
+              fileContext: JSON.stringify(vaultEntry),
+              mode: modeForAPI,
+              fileName: fileForAPI.name,
+              uploadedAt: Date.now(),
+            },
+          },
         }));
       }
 
@@ -1877,6 +1885,20 @@ export default function AnbuHealthAI() {
     setSidebarOpen(false);
   };
 
+  const handleClearChatVault = useCallback(async () => {
+    // Clear this chat's document vault from both local state and server
+    setFileVault(prev => {
+      const updated = { ...prev };
+      delete updated[activeChatId];
+      return updated;
+    });
+    if (user?.phone) {
+      try {
+        await apiClearContext(user.phone, activeChatId, user.authToken || null);
+      } catch {}
+    }
+  }, [activeChatId, user]);
+
   const handleDeleteChat = (chatId) => {
     if (chatId === "all") {
       const newId = `c${Date.now()}`;
@@ -1910,12 +1932,45 @@ export default function AnbuHealthAI() {
     setPromptCount(tokenData.tokens);
     setTokenResetAt(tokenData.resetAt);
 
-    // Load previous chat history from server in background
+    // Load previous chat history + document vaults from server in background
     try {
       const history = await apiUserHistory(u.phone, u.authToken || null);
-      if (history.length > 0) {
+      const { messages: histMsgs, document_vaults: serverVaults } = history;
+
+      // Rehydrate document vault from server — this is what makes document
+      // context survive a login on a new session / device. Server returns
+      // { chatId: [{file_key, mode, vision_data, ...}] }; we convert it to
+      // the same shape the browser vault uses so buildVaultContext works.
+      if (serverVaults && Object.keys(serverVaults).length > 0) {
+        const rehydrated = {};
+        Object.entries(serverVaults).forEach(([chatId, rows]) => {
+          rehydrated[chatId] = {};
+          (rows || []).forEach(row => {
+            if (row.file_key && row.vision_data) {
+              const vd = { ...(row.vision_data || {}), mode: row.mode };
+              rehydrated[chatId][row.file_key] = {
+                fileContext: JSON.stringify(vd),
+                mode: row.mode,
+                fileName: row.file_name || row.file_key,
+                uploadedAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+              };
+            }
+          });
+          if (Object.keys(rehydrated[chatId]).length === 0) delete rehydrated[chatId];
+        });
+        // Merge server vaults into existing localStorage vault (server takes precedence)
+        setFileVault(prev => {
+          const merged = { ...prev };
+          Object.entries(rehydrated).forEach(([cid, entries]) => {
+            merged[cid] = { ...(prev[cid] || {}), ...entries };
+          });
+          return merged;
+        });
+      }
+
+      if (histMsgs && histMsgs.length > 0) {
         const grouped = {};
-        history.forEach((m, i) => {
+        histMsgs.forEach((m, i) => {
           const cid = m.chat_id || "history";
           if (!grouped[cid]) grouped[cid] = [];
           grouped[cid].push({
@@ -1961,7 +2016,7 @@ export default function AnbuHealthAI() {
       {showConsent && <ConsentModal onConsent={() => setShowConsent(false)} />}
       {showOTP && <OTPModal onSuccess={handleLoginSuccess} onClose={() => setShowOTP(false)} />}
 
-      <Sidebar visible={sidebarOpen} onClose={()=>setSidebarOpen(false)} chats={chats} activeChatId={activeChatId} onNewChat={handleNewChat} onSelectChat={setActiveChatId} onDeleteChat={handleDeleteChat} onLogout={handleLogout} user={user} promptCount={promptCount} tokenResetAt={tokenResetAt} fileVault={fileVault} showTechStack={showTechStack} setShowTechStack={setShowTechStack} />
+      <Sidebar visible={sidebarOpen} onClose={()=>setSidebarOpen(false)} chats={chats} activeChatId={activeChatId} onNewChat={handleNewChat} onSelectChat={setActiveChatId} onDeleteChat={handleDeleteChat} onLogout={handleLogout} user={user} promptCount={promptCount} tokenResetAt={tokenResetAt} fileVault={fileVault} showTechStack={showTechStack} setShowTechStack={setShowTechStack} onClearChatVault={handleClearChatVault} />
       {showUploadModal && <UploadModal mode={uploadMode} onClose={()=>setShowUploadModal(false)} onUpload={handleUpload} />}
       {showPlusMenu && <div onClick={()=>setShowPlusMenu(false)} style={{ position:"fixed",inset:0,zIndex:20 }} />}
 
