@@ -84,6 +84,47 @@ def _determine_success(role: str, run_result: dict) -> Tuple[bool, str]:
     return True, "all tool calls succeeded"
 
 
+def _determine_verify_success(role: str, run_result: dict) -> Tuple[bool, str]:
+    """Like _determine_success, but used only for the reflection cycle's
+    re-verify step.  The only relaxation vs. the strict version is for the
+    tester role: `passed=False` from run_tests is only treated as a hard
+    failure when returncode == 1 (actual test failures).  Other non-zero
+    exits — exit 4 (usage error, e.g. path not found before tests exist)
+    or exit 5 (no tests collected) — are not failures at the re-verify
+    stage, because the Coder has already applied its fix and the important
+    signal is whether any collected test *failed*, not whether discovery
+    had transient issues.
+
+    All other behaviour (ok=False, reviewer change-request, no-run_tests
+    call for tester) is identical to _determine_success."""
+    if not run_result.get("ok"):
+        return False, run_result.get("error") or "specialist run failed"
+
+    tool_calls = run_result.get("tool_calls") or []
+
+    for call in tool_calls:
+        result = call.get("result")
+        if not isinstance(result, dict):
+            continue
+        if result.get("ok") is False:
+            return False, f"tool '{call.get('name')}' failed: {result.get('error')}"
+        # For tester re-verify: only hard-fail on exit code 1 (tests ran and
+        # failed).  Exit codes 4/5 (path error, no tests collected) are not
+        # conclusive failures after a Coder fix — treat them as "ran OK".
+        if result.get("passed") is False:
+            if role == "tester" and result.get("returncode") != 1:
+                continue  # transient discovery issue — not a definitive failure
+            return False, f"tool '{call.get('name')}' reported failing tests"
+
+    if role == "tester" and not any(c.get("name") in ("run_tests", "run_terminal") for c in tool_calls):
+        return False, "tester made no run_tests/run_terminal calls — nothing was actually verified"
+
+    if role == "reviewer" and _reviewer_requested_changes(run_result.get("final_text") or ""):
+        return False, f"reviewer requested changes: {_first_line(run_result.get('final_text') or '')}"
+
+    return True, "all tool calls succeeded"
+
+
 # ── Reviewer verdict parsing ────────────────────────────────────────────────
 
 def _reviewer_requested_changes(final_text: str) -> bool:
@@ -217,7 +258,7 @@ async def _run_reflection_cycle(
         verify_result = await verifier_run_fn(
             task_id, project_id=project_id, model=model, max_turns=max_turns, extra_context=None,
         )
-        verify_success, verify_reason = _determine_success(verifier_role, verify_result)
+        verify_success, verify_reason = _determine_verify_success(verifier_role, verify_result)
         _persist_attempt_log(
             project_id, task_id, f"reflect-{round_num}-{verifier_role}", verifier_role, verify_result, verify_success, verify_reason
         )
